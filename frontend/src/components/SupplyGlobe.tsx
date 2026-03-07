@@ -32,6 +32,35 @@ const SEVERITY_COLORS: Record<RiskSeverity, string> = {
   critical: '#a855f7',
 };
 
+/* ── Sector colour scheme (consistent with SupplyMap2D) ─────────── */
+const SECTOR_COLORS: Record<string, string> = {
+  'Electronics': '#3b82f6',
+  'Automotive': '#ef4444',
+  'Textiles': '#ec4899',
+  'Chemicals': '#8b5cf6',
+  'Machinery': '#f97316',
+  'Pharmaceuticals': '#10b981',
+  'Metals': '#6b7280',
+  'Energy': '#eab308',
+  'Agriculture': '#059669',
+  'Aerospace': '#06b6d4',
+};
+
+function getSectorColor(sector?: string): string {
+  if (!sector) return '#06b6d4';
+  if (SECTOR_COLORS[sector]) return SECTOR_COLORS[sector];
+  for (const [key, color] of Object.entries(SECTOR_COLORS)) {
+    if (sector.toLowerCase().includes(key.toLowerCase()) ||
+        key.toLowerCase().includes(sector.toLowerCase())) return color;
+  }
+  return '#06b6d4';
+}
+
+function sectorToArcColor(sector?: string): [string, string] {
+  const c = getSectorColor(sector);
+  return [c, c];
+}
+
 /* ── Value → line thickness ─────────────────────────────────────────── */
 
 /** Map monetary value to a 3D arc stroke width (0.3 – 2.0). */
@@ -138,9 +167,10 @@ export default function SupplyGlobe({ supplyPoints, headquartersLocation }: Prop
         startLng: pt.lng,
         endLat: headquartersLocation.lat,
         endLng: headquartersLocation.lng,
-        color: sev ? SEVERITY_ARC_COLORS[sev] : DEFAULT_ARC_COLOR,
+        color: sev ? SEVERITY_ARC_COLORS[sev] : sectorToArcColor(pt.sector),
         label: `${pt.name} → Headquarters`,
         value: pt.value,
+        sector: pt.sector,
       };
     });
   }, [supplyPoints, headquartersLocation, pointSeverityMap]);
@@ -149,7 +179,7 @@ export default function SupplyGlobe({ supplyPoints, headquartersLocation }: Prop
     const arcs: {
       startLat: number; startLng: number;
       endLat: number; endLng: number;
-      color: [string, string]; label: string; value?: number;
+      color: [string, string]; label: string; value?: number; sector?: string;
     }[] = [];
     for (const res of supplierResearch) {
       const parent = nodeIdToPoint.get(res.node_id);
@@ -162,9 +192,10 @@ export default function SupplyGlobe({ supplyPoints, headquartersLocation }: Prop
           startLng: sc.lng,
           endLat: parent.lat,
           endLng: parent.lng,
-          color: sev ? SEVERITY_ARC_COLORS[sev] : DEFAULT_ARC_COLOR,
+          color: sev ? SEVERITY_ARC_COLORS[sev] : sectorToArcColor(parent.sector),
           label: `${sc.component} (${sc.source_company || sc.source_country}) → ${parent.name}`,
           value: parent.value ? parent.value * 0.2 : undefined,
+          sector: parent.sector,
         });
       }
     }
@@ -197,9 +228,10 @@ export default function SupplyGlobe({ supplyPoints, headquartersLocation }: Prop
       const group = groups.get(key)!;
       const groupIndex = group.indexOf(i);
       const groupSize = group.length;
-      // Subtle altitude bump only for truly overlapping arcs
-      // groupIndex 0 → baseline 0.5, each extra → +0.06 (barely visible)
       const altScale = groupSize > 1 ? 0.5 + groupIndex * 0.06 : 0.5;
+      // Collect all sectors & values for arcs sharing the same endpoints
+      const sectors = group.map(j => all[j].sector).filter(Boolean) as string[];
+      const values  = group.map(j => all[j].value).filter(Boolean) as number[];
       return {
         ...arc,
         stroke3D: valueToStroke3D(arc.value),
@@ -207,6 +239,8 @@ export default function SupplyGlobe({ supplyPoints, headquartersLocation }: Prop
         altitudeScale: altScale,
         groupIndex,
         groupSize,
+        sectors,
+        values,
       };
     });
   }, [rawPrimaryArcs, rawSubArcs]);
@@ -227,7 +261,7 @@ export default function SupplyGlobe({ supplyPoints, headquartersLocation }: Prop
     [enrichedArcs],
   );
 
-  /* ── 2D arc data (with stroke & group metadata for offset) ────── */
+  /* ── 2D arc data (with stroke, group metadata, sectors & values) ── */
   const arcsData2D: MapArc[] = useMemo(
     () =>
       enrichedArcs.map(a => ({
@@ -240,6 +274,8 @@ export default function SupplyGlobe({ supplyPoints, headquartersLocation }: Prop
         stroke: a.stroke2D,
         groupIndex: a.groupIndex,
         groupSize: a.groupSize,
+        sectors: a.sector ? [a.sector] : undefined,
+        values: a.value  ? [a.value]  : undefined,
       })),
     [enrichedArcs],
   );

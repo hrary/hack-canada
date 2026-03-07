@@ -38,6 +38,7 @@ function parseCSV(text: string): SupplyPoint[] {
       material: get('material') || '',
       supplier: get('supplier') || '',
       country: get('country') || '',
+      sector: get('sector') || undefined,
       value: isNaN(value as number) ? undefined : value,
     });
   }
@@ -47,13 +48,28 @@ function parseCSV(text: string): SupplyPoint[] {
 type UploadTab = 'csv' | 'text' | 'image';
 type UploadStatus = 'idle' | 'uploading' | 'success' | 'error';
 
-const SAMPLE_CSV = `name,lat,lng,material,supplier,country,value
-Shenzhen Electronics,22.5431,114.0579,Smartphone Assemblies,Foxconn,China,85000000
-Detroit Motors,42.3314,-83.0458,Electric Vehicle Drivetrains,BorgWarner,United States,120000000
-Stuttgart Precision,48.7758,9.1829,Automotive Sensors & ECUs,Bosch GmbH,Germany,63000000
-Seoul Displays,37.5665,126.978,OLED Display Panels,Samsung Display,South Korea,95000000
-Osaka Robotics,34.6937,135.5023,Industrial Robotic Arms,Fanuc Corporation,Japan,47000000
-Guadalajara Aerospace,20.6597,-103.3496,Aircraft Wiring Harnesses,Safran SA,Mexico,38000000`;
+const SAMPLE_CSV = `name,lat,lng,material,supplier,country,sector,value
+Shenzhen Electronics,22.5431,114.0579,Smartphone Assemblies,Foxconn,China,Electronics,85000000
+Seoul Displays,37.5665,126.978,OLED Display Panels,Samsung Display,South Korea,Electronics,95000000
+Taipei Semiconductors,25.033,121.5654,Advanced Microchips,TSMC,Taiwan,Electronics,150000000
+Detroit Motors,42.3314,-83.0458,Electric Vehicle Drivetrains,BorgWarner,United States,Automotive,120000000
+Stuttgart Precision,48.7758,9.1829,Automotive Sensors & ECUs,Bosch GmbH,Germany,Automotive,63000000
+Nagoya Transmissions,35.1815,136.9066,Hybrid Transmission Units,Aisin Corporation,Japan,Automotive,54000000
+Dhaka Garments,23.8103,90.4125,Technical Performance Fabrics,Square Textiles,Bangladesh,Textiles,12000000
+Ho Chi Minh Apparel,10.8231,106.6297,Synthetic Sportswear Materials,Thanh Cong Textile,Vietnam,Textiles,18000000
+Basel Chemicals,47.5596,7.5886,Specialty Polymer Resins,BASF SE,Switzerland,Chemicals,72000000
+Mumbai Pharma,19.076,72.8777,Active Pharmaceutical Ingredients,Sun Pharmaceutical,India,Pharmaceuticals,41000000
+Dublin Biotech,53.3498,-6.2603,Monoclonal Antibody Compounds,Pfizer Ireland,Ireland,Pharmaceuticals,130000000
+Osaka Robotics,34.6937,135.5023,Industrial Robotic Arms,Fanuc Corporation,Japan,Machinery,47000000
+Milan Machinery,45.4642,9.19,CNC Precision Components,Brembo SpA,Italy,Machinery,36000000
+Guadalajara Aerospace,20.6597,-103.3496,Aircraft Wiring Harnesses,Safran SA,Mexico,Aerospace,38000000
+Toulouse Avionics,43.6047,1.4442,Flight Control Systems,Airbus Defence,France,Aerospace,110000000
+Johannesburg Metals,26.2041,28.0473,Platinum Group Catalysts,Anglo American,South Africa,Metals,58000000
+Santiago Copper,33.4489,-70.6693,Refined Copper Cathodes,Codelco,Chile,Metals,44000000
+Brisbane LNG,27.4698,153.0251,Liquefied Natural Gas,Santos Ltd,Australia,Energy,92000000
+Riyadh Petrochemicals,24.7136,46.6753,Ethylene Glycol Feedstock,SABIC,Saudi Arabia,Energy,67000000
+São Paulo Agri,-23.5505,-46.6333,Soy Protein Isolates,Cargill Brasil,Brazil,Agriculture,22000000
+Buenos Aires Grains,-34.6037,-58.3816,Processed Grain Derivatives,Bunge Argentina,Argentina,Agriculture,29000000`;
 
 export default function SupplyPanel() {
   const {

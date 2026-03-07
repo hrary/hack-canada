@@ -6,6 +6,7 @@ export interface SupplyPoint {
   material: string;
   supplier: string;
   country: string;
+  sector?: string;  // e.g. Electronics, Automotive, Textiles …
   value?: number; // estimated monetary value (USD) of this supply link
 }
 
