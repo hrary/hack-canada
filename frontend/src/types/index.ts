@@ -6,6 +6,7 @@ export interface SupplyPoint {
   material: string;
   supplier: string;
   country: string;
+  value?: number; // estimated monetary value (USD) of this supply link
 }
 
 export interface SupplyArc {

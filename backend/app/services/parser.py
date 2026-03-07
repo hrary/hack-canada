@@ -132,6 +132,11 @@ def _parse_csv(content: str) -> SupplyChainData:
         except (ValueError, TypeError):
             continue  # skip rows without valid coordinates
 
+        try:
+            value = float(row.get("value") or row.get("amount") or 0)
+        except (ValueError, TypeError):
+            value = 0.0
+
         nodes.append(
             SupplyNode(
                 id=uuid4().hex[:12],
@@ -141,6 +146,7 @@ def _parse_csv(content: str) -> SupplyChainData:
                 material=row.get("material", ""),
                 supplier=row.get("supplier", ""),
                 country=row.get("country", ""),
+                value=value,
             )
         )
 

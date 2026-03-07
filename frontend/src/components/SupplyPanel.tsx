@@ -29,6 +29,8 @@ function parseCSV(text: string): SupplyPoint[] {
     const lat = parseFloat(get('lat') || get('latitude'));
     const lng = parseFloat(get('lng') || get('longitude') || get('lon'));
     if (isNaN(lat) || isNaN(lng)) continue;
+    const rawVal = get('value') || get('amount');
+    const value = rawVal ? parseFloat(rawVal) : undefined;
     points.push({
       id: crypto.randomUUID(),
       name: get('name') || `Point ${i}`,
@@ -36,6 +38,7 @@ function parseCSV(text: string): SupplyPoint[] {
       material: get('material') || '',
       supplier: get('supplier') || '',
       country: get('country') || '',
+      value: isNaN(value as number) ? undefined : value,
     });
   }
   return points;
@@ -44,12 +47,13 @@ function parseCSV(text: string): SupplyPoint[] {
 type UploadTab = 'csv' | 'text' | 'image';
 type UploadStatus = 'idle' | 'uploading' | 'success' | 'error';
 
-const SAMPLE_CSV = `name,lat,lng,material,supplier,country
-Shenzhen Electronics,22.5431,114.0579,Semiconductors,Foxconn,China
-São Paulo Steel,-23.5505,-46.6333,Steel Alloys,Gerdau SA,Brazil
-Stuttgart Precision,48.7758,9.1829,Precision Parts,Bosch GmbH,Germany
-Mumbai Textiles,19.076,72.8777,Raw Cotton,Reliance Textiles,India
-Melbourne Mining,-37.8136,144.9631,Lithium,BHP Group,Australia`;
+const SAMPLE_CSV = `name,lat,lng,material,supplier,country,value
+Shenzhen Electronics,22.5431,114.0579,Smartphone Assemblies,Foxconn,China,85000000
+Detroit Motors,42.3314,-83.0458,Electric Vehicle Drivetrains,BorgWarner,United States,120000000
+Stuttgart Precision,48.7758,9.1829,Automotive Sensors & ECUs,Bosch GmbH,Germany,63000000
+Seoul Displays,37.5665,126.978,OLED Display Panels,Samsung Display,South Korea,95000000
+Osaka Robotics,34.6937,135.5023,Industrial Robotic Arms,Fanuc Corporation,Japan,47000000
+Guadalajara Aerospace,20.6597,-103.3496,Aircraft Wiring Harnesses,Safran SA,Mexico,38000000`;
 
 export default function SupplyPanel() {
   const {
