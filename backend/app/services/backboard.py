@@ -114,7 +114,9 @@ Do NOT generalise about where materials "typically" come from — research the
 actual company.  For example, if the user says they get axles from "Joe's
 Axles Inc.", search for "Joe's Axles Inc. suppliers" or "Joe's Axles Inc.
 sub-component sourcing" to find real information.
-One level of sub-component research is sufficient.
+Find ALL major sub-components or raw material sources for each supplier
+(typically 3-6 per node), but only one level deep — do NOT research
+sub-sub-components.
 
 IMPORTANT: Always call web_search at least once per supplier node to ground
 your analysis in real data about that specific company.

@@ -148,7 +148,8 @@ INSTRUCTIONS:
 For EACH node, use the web_search tool to research the **specific named
 supplier** and discover where THEY source their sub-components or raw materials.
 Do NOT generalise — look up the actual company.
-One level of sub-component depth is enough.
+Find ALL major sub-components for each supplier (typically 3-6 per node).
+Only one level of depth — do NOT search for sub-sub-components.
 
 Return a JSON object:
 {{

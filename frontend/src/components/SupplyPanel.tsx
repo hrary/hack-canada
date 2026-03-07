@@ -53,7 +53,8 @@ Melbourne Mining,-37.8136,144.9631,Lithium,BHP Group,Australia`;
 
 export default function SupplyPanel() {
   const {
-    headquartersLocation, setHeadquartersLocation, setSupplyPoints,
+    headquartersLocation, setHeadquartersLocation,
+    supplyPoints, setSupplyPoints,
     currentJobId, setCurrentJobId,
     panelMode, setPanelMode,
     analysisResult, setAnalysisResult,
@@ -62,6 +63,7 @@ export default function SupplyPanel() {
     supplierResearch, setSupplierResearch,
     streamedRisks, setStreamedRisks,
     streamedAlternatives, setStreamedAlternatives,
+    setFocusLocation,
     simulationResults, setSimulationResults,
     simulationLoading, setSimulationLoading,
   } = useAppContext();
@@ -157,7 +159,7 @@ export default function SupplyPanel() {
           return;
         }
         const resp = await uploadSupplyChainImage(imageFile);
-        setCurrentJobId(resp.jobId ?? null);
+        setCurrentJobId(resp.job_id ?? null);
         setUploadStatus('success');
         setStatusMessage('Image uploaded. Processing will begin shortly.');
         setImageFile(null);
@@ -174,7 +176,7 @@ export default function SupplyPanel() {
           content,
           fileName: activeTab === 'csv' ? csvFileName : undefined,
         });
-        setCurrentJobId(resp.jobId ?? null);
+        setCurrentJobId(resp.job_id ?? null);
         setUploadStatus('success');
         setStatusMessage(
           activeTab === 'csv'
@@ -187,10 +189,6 @@ export default function SupplyPanel() {
 
       // Switch to analysis mode after successful upload
       setPanelMode('analysis');
-
-      // Auto-trigger streaming analysis if we got a jobId
-      // (note: currentJobId may not be set yet due to React batching,
-      //  so we use the jobId from the response we just captured)
     } catch (err) {
       setUploadStatus('error');
       setStatusMessage(err instanceof Error ? err.message : 'Upload failed.');
@@ -257,6 +255,18 @@ export default function SupplyPanel() {
 
   // Simulation scenario input
   const [scenarioText, setScenarioText] = useState('');
+
+  // Pan globe to a supply node by backend ID (matched via supplier name)
+  const focusNode = (nodeId: string) => {
+    let pt = supplyPoints.find(p => p.id === nodeId);
+    if (!pt) {
+      const res = supplierResearch.find(r => r.node_id === nodeId);
+      if (res) {
+        pt = supplyPoints.find(p => p.supplier === res.supplier || p.name === res.supplier);
+      }
+    }
+    if (pt) setFocusLocation({ lat: pt.lat, lng: pt.lng });
+  };
 
   const tabs: { key: UploadTab; label: string; icon: React.ReactNode }[] = [
     { key: 'csv', label: 'CSV', icon: <FileText size={14} /> },
@@ -519,7 +529,7 @@ export default function SupplyPanel() {
                     <Search size={14} /> Supplier Research ({supplierResearch.length})
                   </div>
                   {supplierResearch.map((res, i) => (
-                    <div key={i} className={styles.riskItem}>
+                    <div key={i} className={styles.riskItem} onClick={() => focusNode(res.node_id)} style={{ cursor: 'pointer' }}>
                       <span className={`${styles.severityBadge} ${styles.severity_low}`}>
                         {res.sub_components.length} sub
                       </span>
@@ -539,7 +549,7 @@ export default function SupplyPanel() {
                     <AlertTriangle size={14} /> Risks ({streamedRisks.length})
                   </div>
                   {streamedRisks.map((risk, i) => (
-                    <div key={i} className={styles.riskItem}>
+                    <div key={i} className={styles.riskItem} onClick={() => focusNode(risk.node_id)} style={{ cursor: 'pointer' }}>
                       <span className={`${styles.severityBadge} ${styles[`severity_${risk.severity}`]}`}>
                         {risk.severity}
                       </span>
@@ -556,7 +566,7 @@ export default function SupplyPanel() {
                     <Lightbulb size={14} /> Alternatives ({streamedAlternatives.length})
                   </div>
                   {streamedAlternatives.map((alt, i) => (
-                    <div key={i} className={styles.altItem}>
+                    <div key={i} className={styles.altItem} onClick={() => setFocusLocation({ lat: alt.lat, lng: alt.lng })} style={{ cursor: 'pointer' }}>
                       <strong>{alt.suggested_supplier}</strong> in {alt.suggested_country}
                       <p className={styles.altReason}>{alt.reason}</p>
                     </div>
@@ -581,11 +591,15 @@ export default function SupplyPanel() {
               )}
 
               <button
-                className={styles.actionBtn}
+                className={`${styles.analysisBtn} ${(!currentJobId || analysisLoading) ? styles.analysisBtnDisabled : ''}`}
                 onClick={handleRunAnalysis}
                 disabled={!currentJobId || analysisLoading}
               >
-                <Play size={14} /> {analysisResult ? 'Re-run Analysis' : 'Run Analysis'}
+                {analysisLoading ? (
+                  <><Loader2 size={14} className={styles.spinner} /> Analysing…</>
+                ) : (
+                  <><Play size={14} /> {analysisResult ? 'Re-run Analysis' : 'Run Analysis'}</>
+                )}
               </button>
             </motion.div>
           )}
