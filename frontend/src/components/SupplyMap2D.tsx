@@ -4,13 +4,23 @@ import {
   Geographies,
   Geography,
   Marker,
-  Line,
   ZoomableGroup,
   Graticule,
 } from 'react-simple-maps';
+import { geoNaturalEarth1 } from 'd3-geo';
 import styles from './SupplyMap2D.module.css';
 
 const GEO_URL = 'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json';
+
+export interface ArcSegment {
+  startLng: number;
+  startLat: number;
+  endLng: number;
+  endLat: number;
+  color: string;
+  stroke: number;
+  sector?: string;
+}
 
 export interface MapArc {
   startLat: number;
@@ -22,6 +32,8 @@ export interface MapArc {
   stroke: number;
   groupIndex: number;
   groupSize: number;
+  sectors?: string[]; // sectors involved in this arc
+  values?: number[]; // trade value per sector
 }
 
 export interface MapPoint {
@@ -32,6 +44,34 @@ export interface MapPoint {
   label: string;
 }
 
+// Sector-based color mapping (consistent across app)
+const SECTOR_COLORS: Record<string, string> = {
+  'Electronics': '#3b82f6',
+  'Automotive': '#ef4444',
+  'Textiles': '#ec4899',
+  'Chemicals': '#8b5cf6',
+  'Machinery': '#f97316',
+  'Pharmaceuticals': '#10b981',
+  'Metals': '#6b7280',
+  'Energy': '#eab308',
+  'Agriculture': '#059669',
+  'Aerospace': '#06b6d4',
+  'Default': '#06b6d4',
+};
+
+function getSectorColor(sector?: string): string {
+  if (!sector) return SECTOR_COLORS['Default'];
+  // Try exact match first
+  if (SECTOR_COLORS[sector]) return SECTOR_COLORS[sector];
+  // Try partial match
+  for (const [key, color] of Object.entries(SECTOR_COLORS)) {
+    if (sector.toLowerCase().includes(key.toLowerCase()) || key.toLowerCase().includes(sector.toLowerCase())) {
+      return color;
+    }
+  }
+  return SECTOR_COLORS['Default'];
+}
+
 interface Props {
   arcsData: MapArc[];
   pointsData: MapPoint[];
@@ -39,6 +79,43 @@ interface Props {
   onPointClick: (point: MapPoint) => void;
   onArcClick: (arc: MapArc) => void;
   onDismiss: () => void;
+}
+
+// Map dimensions & projection config (must match <ComposableMap>)
+const MAP_WIDTH = 960;
+const MAP_HEIGHT = 500;
+const MAP_CENTER: [number, number] = [10, 10];
+const MAP_SCALE = 160;
+
+/** Shared projection instance matching the ComposableMap config */
+const projection = geoNaturalEarth1()
+  .scale(MAP_SCALE)
+  .center(MAP_CENTER)
+  .translate([MAP_WIDTH / 2, MAP_HEIGHT / 2]);
+
+/**
+ * Project [lng, lat] → [x, y] pixel coordinates.
+ * Returns null if the point can't be projected.
+ */
+function project(lng: number, lat: number): [number, number] | null {
+  return projection([lng, lat]) as [number, number] | null;
+}
+
+/**
+ * Build an SVG quadratic bezier "arc" path between two projected points.
+ * The control point is offset upward (negative Y) proportional to the
+ * distance, giving a nice curved arc effect.
+ */
+function arcPath(
+  x1: number, y1: number,
+  x2: number, y2: number,
+): string {
+  const mx = (x1 + x2) / 2;
+  const my = (y1 + y2) / 2;
+  const dist = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
+  // Bulge upward; scale with distance so short arcs don't over-curve
+  const bulge = Math.min(dist * 0.25, 60);
+  return `M${x1},${y1} Q${mx},${my - bulge} ${x2},${y2}`;
 }
 
 export default function SupplyMap2D({
@@ -55,49 +132,102 @@ export default function SupplyMap2D({
     text: string;
   } | null>(null);
 
-  /** Offset overlapping arcs perpendicular to their direct path */
-  const offsetArcs = useMemo(() => {
-    return arcsData.map((arc) => {
-      if (arc.groupSize <= 1) return arc;
+  /**
+   * Build one ArcSegment per sector per arc.
+   * Multi-sector arcs are offset perpendicular to the arc direction.
+   * No splitting — each arc stays as a single continuous segment.
+   */
+  const segmentedArcs = useMemo(() => {
+    const segments: (ArcSegment & { arc: MapArc; index: number })[] = [];
 
-      const dx = arc.endLng - arc.startLng;
+    arcsData.forEach((arc) => {
+      if (!arc.sectors || arc.sectors.length === 0) {
+        segments.push({
+          startLng: arc.startLng, startLat: arc.startLat,
+          endLng: arc.endLng, endLat: arc.endLat,
+          color: arc.color[0],
+          stroke: arc.stroke,
+          sector: undefined,
+          arc, index: 0,
+        });
+        return;
+      }
+
+      // Perpendicular offset from the OVERALL arc direction
+      let dx = arc.endLng - arc.startLng;
+      if (Math.abs(dx) > 180) dx = dx > 0 ? dx - 360 : dx + 360;
       const dy = arc.endLat - arc.startLat;
-      const len = Math.sqrt(dx * dx + dy * dy);
-      if (len === 0) return arc;
+      const distance = Math.sqrt(dx * dx + dy * dy);
 
-      // Perpendicular unit vector
-      const px = -dy / len;
-      const py = dx / len;
+      if (distance === 0) {
+        arc.sectors.forEach((sector, si) => {
+          segments.push({
+            startLng: arc.startLng, startLat: arc.startLat,
+            endLng: arc.endLng, endLat: arc.endLat,
+            color: getSectorColor(sector),
+            stroke: arc.values?.[si] || arc.stroke,
+            sector, arc, index: si,
+          });
+        });
+        return;
+      }
 
-      const spread = Math.min(1.5, len * 0.08);
-      const center = (arc.groupSize - 1) / 2;
-      const t =
-        arc.groupSize > 1
-          ? (arc.groupIndex - center) / Math.max(arc.groupSize - 1, 1)
+      const perpX = -dy / distance;
+      const perpY = dx / distance;
+      const maxSpread = Math.min(3.0, distance * 0.12);
+      const numSectors = arc.sectors.length;
+      const center = (numSectors - 1) / 2;
+
+      arc.sectors.forEach((sector, si) => {
+        const off = numSectors > 1
+          ? ((si - center) / Math.max(numSectors - 1, 1)) * maxSpread
           : 0;
-      const offset = t * spread;
 
-      return {
-        ...arc,
-        startLng: arc.startLng + px * offset * 0.5,
-        startLat: arc.startLat + py * offset * 0.5,
-        endLng: arc.endLng + px * offset,
-        endLat: arc.endLat + py * offset,
-      };
+        segments.push({
+          startLng: arc.startLng + perpX * off,
+          startLat: arc.startLat + perpY * off,
+          endLng: arc.endLng + perpX * off,
+          endLat: arc.endLat + perpY * off,
+          color: getSectorColor(sector),
+          stroke: arc.values?.[si] || arc.stroke,
+          sector, arc, index: si,
+        });
+      });
     });
+
+    return segments;
   }, [arcsData]);
+
+  // Max stroke for normalized thickness
+  const maxStrokeValue = useMemo(() => {
+    if (segmentedArcs.length === 0) return 1;
+    return Math.max(...segmentedArcs.map(s => s.stroke), 1);
+  }, [segmentedArcs]);
+
+  // Pre-project all arcs to pixel-space SVG paths
+  const projectedArcs = useMemo(() => {
+    return segmentedArcs.map((seg) => {
+      const p1 = project(seg.startLng, seg.startLat);
+      const p2 = project(seg.endLng, seg.endLat);
+      if (!p1 || !p2) return null;
+      return {
+        d: arcPath(p1[0], p1[1], p2[0], p2[1]),
+        ...seg,
+      };
+    }).filter(Boolean) as (ArcSegment & { arc: MapArc; index: number; d: string })[];
+  }, [segmentedArcs]);
 
   return (
     <div className={styles.mapContainer}>
       <ComposableMap
         projection="geoNaturalEarth1"
-        projectionConfig={{ scale: 160, center: [10, 10] }}
-        width={960}
-        height={500}
+        projectionConfig={{ scale: MAP_SCALE, center: MAP_CENTER }}
+        width={MAP_WIDTH}
+        height={MAP_HEIGHT}
         style={{ width: '100%', height: '100%' }}
         onClick={onDismiss}
       >
-        <ZoomableGroup>
+        <ZoomableGroup minZoom={1} maxZoom={8} center={MAP_CENTER} disablePanning={true}>
           <Graticule stroke="rgba(255,255,255,0.05)" strokeWidth={0.3} />
           <Geographies geography={GEO_URL}>
             {({ geographies }: any) =>
@@ -118,30 +248,31 @@ export default function SupplyMap2D({
             }
           </Geographies>
 
-          {/* Supply-chain lines */}
-          {offsetArcs.map((arc, i) => (
-            <Line
+          {/* Smooth bezier arcs drawn in pixel-space — never clip at antimeridian */}
+          {projectedArcs.map((seg, i) => (
+            <path
               key={`arc-${i}`}
-              from={[arc.startLng, arc.startLat]}
-              to={[arc.endLng, arc.endLat]}
-              stroke={arc.color[0]}
-              strokeWidth={arc.stroke}
+              d={seg.d}
+              stroke={seg.color}
+              strokeWidth={Math.max(1.2, (seg.stroke / maxStrokeValue) * 6.5)}
               strokeLinecap="round"
-              strokeOpacity={0.75}
+              strokeLinejoin="round"
+              strokeOpacity={0.85}
               fill="none"
               onClick={(e) => {
                 e.stopPropagation();
-                onArcClick(arc);
+                onArcClick(seg.arc);
               }}
-              onMouseEnter={(e) =>
+              onMouseEnter={(e) => {
+                const sectorLabel = seg.sector ? ` [${seg.sector}]` : '';
                 setTooltip({
                   x: (e as unknown as MouseEvent).clientX,
                   y: (e as unknown as MouseEvent).clientY,
-                  text: arc.label,
-                })
-              }
+                  text: seg.arc.label + sectorLabel,
+                });
+              }}
               onMouseLeave={() => setTooltip(null)}
-              style={{ cursor: 'pointer' }}
+              style={{ cursor: 'pointer', filter: 'drop-shadow(0 0 3px rgba(0,0,0,0.6))' }}
             />
           ))}
 
@@ -199,6 +330,18 @@ export default function SupplyMap2D({
           </button>
         </div>
       )}
+
+      <div className={styles.sectorLegend}>
+        <div className={styles.legendTitle}>Sectors</div>
+        {Object.entries(SECTOR_COLORS).map(([sector, color]) => (
+          sector !== 'Default' && (
+            <div key={sector} className={styles.legendItem}>
+              <div className={styles.legendColor} style={{ backgroundColor: color }} />
+              <span>{sector}</span>
+            </div>
+          )
+        ))}
+      </div>
     </div>
   );
 }
