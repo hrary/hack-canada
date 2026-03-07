@@ -5,11 +5,17 @@
   overflow: hidden;
   border-radius: var(--radius-lg);
   background: radial-gradient(ellipse at center, #1a1a2e 0%, #0a0a14 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .globeContainer > div {
   width: 100% !important;
   height: 100% !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .globeContainer canvas {

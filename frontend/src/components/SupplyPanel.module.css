@@ -286,3 +286,143 @@
   background: rgba(239, 68, 68, 0.1);
   border: 1px solid rgba(239, 68, 68, 0.2);
 }
+
+/* Back button */
+.backBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  color: var(--text-muted);
+  background: none;
+  border-radius: var(--radius-sm);
+  transition: all 0.2s;
+  margin-right: 8px;
+}
+
+.backBtn:hover {
+  color: var(--text-primary);
+  background: rgba(99, 102, 241, 0.08);
+}
+
+/* Loading row */
+.loadingRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 20px 0;
+  color: var(--text-secondary);
+  font-size: 0.88rem;
+}
+
+/* Empty state */
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 32px 16px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.emptyState p {
+  font-size: 0.88rem;
+  margin: 0;
+}
+
+/* Result cards */
+.resultCard {
+  padding: 14px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.resultCardTitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.resultText {
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* Risk items */
+.riskItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border-color);
+}
+
+.riskItem:first-of-type {
+  border-top: none;
+}
+
+.severityBadge {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  border-radius: 9999px;
+  letter-spacing: 0.04em;
+}
+
+.severity_low {
+  color: #22c55e;
+  background: rgba(34, 197, 94, 0.12);
+}
+
+.severity_medium {
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.12);
+}
+
+.severity_high {
+  color: #f43f5e;
+  background: rgba(244, 63, 94, 0.12);
+}
+
+.severity_critical {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.2);
+}
+
+.riskDesc {
+  font-size: 0.83rem;
+  color: var(--text-primary);
+  line-height: 1.45;
+}
+
+/* Alternative items */
+.altItem {
+  padding: 8px 0;
+  border-top: 1px solid var(--border-color);
+  font-size: 0.85rem;
+  color: var(--text-primary);
+}
+
+.altItem:first-of-type {
+  border-top: none;
+}
+
+.altReason {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin: 4px 0 0;
+}

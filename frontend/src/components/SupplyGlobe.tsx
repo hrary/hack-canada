@@ -1,6 +1,7 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useMemo } from 'react';
 import GlobeGL from 'react-globe.gl';
-import type { SupplyPoint, SupplyArc } from '../types';
+import type { SupplyPoint, SupplyArc, SupplierResearch, RiskFactor, RiskSeverity } from '../types';
+import { useAppContext } from '../context/AppContext';
 import styles from './SupplyGlobe.module.css';
 
 interface Props {
@@ -16,29 +17,70 @@ const ARC_COLORS: [string, string][] = [
   ['#a855f7', '#f43f5e'],
 ];
 
+const SUB_ARC_COLORS: [string, string][] = [
+  ['#facc15', '#f97316'],
+  ['#fb923c', '#f43f5e'],
+];
+
+const SEVERITY_COLORS: Record<RiskSeverity, string> = {
+  low: '#22c55e',
+  medium: '#f59e0b',
+  high: '#f43f5e',
+  critical: '#ef4444',
+};
+
 export default function SupplyGlobe({ supplyPoints, headquartersLocation }: Props) {
   const globeRef = useRef<any>(null);
+  const { supplierResearch, streamedRisks } = useAppContext();
 
   useEffect(() => {
     const globe = globeRef.current;
     if (!globe) return;
-    // Auto rotate
     globe.controls().autoRotate = true;
     globe.controls().autoRotateSpeed = 0.5;
     globe.controls().enableZoom = true;
   }, []);
 
-  // When HQ or points change, point to HQ
   useEffect(() => {
     if (headquartersLocation && globeRef.current) {
       globeRef.current.pointOfView(
         { lat: headquartersLocation.lat, lng: headquartersLocation.lng, altitude: 2 },
-        1000
+        1000,
       );
     }
   }, [headquartersLocation]);
 
-  const arcsData: SupplyArc[] = headquartersLocation
+  // Build a map of node_id → worst severity for colour coding
+  const severityMap = useMemo(() => {
+    const m = new Map<string, RiskSeverity>();
+    const order: Record<RiskSeverity, number> = { low: 0, medium: 1, high: 2, critical: 3 };
+    for (const r of streamedRisks) {
+      const cur = m.get(r.node_id);
+      if (!cur || order[r.severity] > order[cur]) m.set(r.node_id, r.severity);
+    }
+    return m;
+  }, [streamedRisks]);
+
+  // Sub-component points from research phase
+  const subPoints = useMemo(() => {
+    const pts: { lat: number; lng: number; size: number; color: string; label: string }[] = [];
+    for (const res of supplierResearch) {
+      for (const sc of res.sub_components) {
+        if (!sc.lat && !sc.lng) continue;
+        pts.push({
+          lat: sc.lat,
+          lng: sc.lng,
+          size: 0.35,
+          color: '#facc15',
+          label: `${sc.component} — ${sc.source_company || sc.source_country}`,
+        });
+      }
+    }
+    return pts;
+  }, [supplierResearch]);
+
+  // Arcs: primary → HQ
+  const primaryArcs: SupplyArc[] = headquartersLocation
     ? supplyPoints.map((pt, i) => ({
         startLat: pt.lat,
         startLng: pt.lng,
@@ -48,14 +90,41 @@ export default function SupplyGlobe({ supplyPoints, headquartersLocation }: Prop
       }))
     : [];
 
-  const pointsData = [
-    ...supplyPoints.map(pt => ({
-      lat: pt.lat,
-      lng: pt.lng,
-      size: 0.6,
-      color: '#22d3ee',
-      label: `${pt.name} — ${pt.material}`,
-    })),
+  // Arcs: sub-component → parent supplier
+  const subArcs = useMemo(() => {
+    const arcs: SupplyArc[] = [];
+    for (const res of supplierResearch) {
+      const parent = supplyPoints.find(p => p.id === res.node_id);
+      if (!parent) continue;
+      for (const sc of res.sub_components) {
+        if (!sc.lat && !sc.lng) continue;
+        arcs.push({
+          startLat: sc.lat,
+          startLng: sc.lng,
+          endLat: parent.lat,
+          endLng: parent.lng,
+          color: SUB_ARC_COLORS[arcs.length % SUB_ARC_COLORS.length],
+        });
+      }
+    }
+    return arcs;
+  }, [supplierResearch, supplyPoints]);
+
+  const arcsData = [...primaryArcs, ...subArcs];
+
+  // Colour primary supply points by severity when available
+  const pointsData = useMemo(() => [
+    ...supplyPoints.map(pt => {
+      const sev = severityMap.get(pt.id);
+      return {
+        lat: pt.lat,
+        lng: pt.lng,
+        size: 0.6,
+        color: sev ? SEVERITY_COLORS[sev] : '#22d3ee',
+        label: `${pt.name} — ${pt.material}${sev ? ` [${sev.toUpperCase()}]` : ''}`,
+      };
+    }),
+    ...subPoints,
     ...(headquartersLocation
       ? [{
           lat: headquartersLocation.lat,
@@ -65,7 +134,7 @@ export default function SupplyGlobe({ supplyPoints, headquartersLocation }: Prop
           label: 'Headquarters',
         }]
       : []),
-  ];
+  ], [supplyPoints, subPoints, headquartersLocation, severityMap]);
 
   const ringsData = headquartersLocation
     ? [{ lat: headquartersLocation.lat, lng: headquartersLocation.lng, maxR: 5, propagationSpeed: 2, repeatPeriod: 800 }]
