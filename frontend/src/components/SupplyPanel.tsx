@@ -157,7 +157,7 @@ export default function SupplyPanel() {
           return;
         }
         const resp = await uploadSupplyChainImage(imageFile);
-        setCurrentJobId(resp.jobId ?? null);
+        setCurrentJobId(resp.job_id ?? null);
         setUploadStatus('success');
         setStatusMessage('Image uploaded. Processing will begin shortly.');
         setImageFile(null);
@@ -174,7 +174,7 @@ export default function SupplyPanel() {
           content,
           fileName: activeTab === 'csv' ? csvFileName : undefined,
         });
-        setCurrentJobId(resp.jobId ?? null);
+        setCurrentJobId(resp.job_id ?? null);
         setUploadStatus('success');
         setStatusMessage(
           activeTab === 'csv'

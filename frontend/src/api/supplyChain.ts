@@ -52,14 +52,14 @@ export interface SupplyChainTextPayload {
 export interface SupplyChainTextResponse {
   success: boolean;
   message: string;
-  jobId?: string;
+  job_id?: string;
 }
 
 /** Response after the backend processes an image upload */
 export interface SupplyChainImageResponse {
   success: boolean;
   message: string;
-  jobId?: string;
+  job_id?: string;
 }
 
 // ─── API calls ───────────────────────────────────────────────────────
