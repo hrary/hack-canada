@@ -46,6 +46,7 @@ class SupplyNode(BaseModel):
     material: str = ""
     supplier: str = ""
     country: str = ""
+    value: float = 0.0  # estimated monetary value (USD) of this supply link
 
 
 class SupplyChainData(BaseModel):

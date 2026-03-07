@@ -12,12 +12,15 @@
   "dependencies": {
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.5.0",
+    "@types/react-simple-maps": "^3.0.6",
     "framer-motion": "^12.35.0",
     "lucide-react": "^0.577.0",
+    "prop-types": "^15.8.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-globe.gl": "^2.37.0",
     "react-router-dom": "^7.13.1",
+    "react-simple-maps": "^3.0.0",
     "three": "^0.183.2"
   },
   "devDependencies": {

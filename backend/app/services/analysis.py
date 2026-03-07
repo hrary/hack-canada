@@ -148,7 +148,16 @@ INSTRUCTIONS:
 For EACH node, use the web_search tool to research the **specific named
 supplier** and discover where THEY source their sub-components or raw materials.
 Do NOT generalise — look up the actual company.
-One level of sub-component depth is enough.
+
+Because these are MANUFACTURED or ASSEMBLED products, each supplier will have
+many sub-components.  You MUST find at least 4 sub-components per supplier node,
+and ideally 5-8.  Think about what goes INTO the finished product:
+  • Semiconductor chips, PCBs, connectors, casings, displays, batteries,
+    motors, gears, wiring, sensors, software IPs, rare-earth magnets, etc.
+  • For each sub-component identify WHO supplies it and WHERE.
+
+Only go one level deep — do NOT research sub-sub-components.
+Use web_search for EVERY supplier node to ground your answers in real data.
 
 Return a JSON object:
 {{
@@ -170,8 +179,8 @@ Return a JSON object:
   ]
 }}
 
-Use web_search for EVERY supplier node.  Include realistic lat/lng for each
-sub-component source (use capital city coords if only country is known).
+Include realistic lat/lng for each sub-component source (use city coords where
+the supplier's factory or HQ is located, not just the capital).
 """
     return await ask_analysis_research(prompt)
 

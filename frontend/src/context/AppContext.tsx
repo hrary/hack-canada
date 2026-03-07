@@ -28,6 +28,9 @@ interface AppContextType {
   setStreamedRisks: (r: RiskFactor[]) => void;
   streamedAlternatives: Alternative[];
   setStreamedAlternatives: (a: Alternative[]) => void;
+  // Globe focus
+  focusLocation: { lat: number; lng: number } | null;
+  setFocusLocation: (loc: { lat: number; lng: number } | null) => void;
   // Simulation
   simulationResults: SimulationResult[];
   setSimulationResults: (r: SimulationResult[]) => void;
@@ -49,6 +52,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [supplierResearch, setSupplierResearch] = useState<SupplierResearch[]>([]);
   const [streamedRisks, setStreamedRisks] = useState<RiskFactor[]>([]);
   const [streamedAlternatives, setStreamedAlternatives] = useState<Alternative[]>([]);
+  const [focusLocation, setFocusLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [simulationResults, setSimulationResults] = useState<SimulationResult[]>([]);
   const [simulationLoading, setSimulationLoading] = useState(false);
 
@@ -65,6 +69,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       supplierResearch, setSupplierResearch,
       streamedRisks, setStreamedRisks,
       streamedAlternatives, setStreamedAlternatives,
+      focusLocation, setFocusLocation,
       simulationResults, setSimulationResults,
       simulationLoading, setSimulationLoading,
     }}>

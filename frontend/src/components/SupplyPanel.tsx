@@ -29,6 +29,8 @@ function parseCSV(text: string): SupplyPoint[] {
     const lat = parseFloat(get('lat') || get('latitude'));
     const lng = parseFloat(get('lng') || get('longitude') || get('lon'));
     if (isNaN(lat) || isNaN(lng)) continue;
+    const rawVal = get('value') || get('amount');
+    const value = rawVal ? parseFloat(rawVal) : undefined;
     points.push({
       id: crypto.randomUUID(),
       name: get('name') || `Point ${i}`,
@@ -36,6 +38,7 @@ function parseCSV(text: string): SupplyPoint[] {
       material: get('material') || '',
       supplier: get('supplier') || '',
       country: get('country') || '',
+      value: isNaN(value as number) ? undefined : value,
     });
   }
   return points;
@@ -44,16 +47,18 @@ function parseCSV(text: string): SupplyPoint[] {
 type UploadTab = 'csv' | 'text' | 'image';
 type UploadStatus = 'idle' | 'uploading' | 'success' | 'error';
 
-const SAMPLE_CSV = `name,lat,lng,material,supplier,country
-Shenzhen Electronics,22.5431,114.0579,Semiconductors,Foxconn,China
-São Paulo Steel,-23.5505,-46.6333,Steel Alloys,Gerdau SA,Brazil
-Stuttgart Precision,48.7758,9.1829,Precision Parts,Bosch GmbH,Germany
-Mumbai Textiles,19.076,72.8777,Raw Cotton,Reliance Textiles,India
-Melbourne Mining,-37.8136,144.9631,Lithium,BHP Group,Australia`;
+const SAMPLE_CSV = `name,lat,lng,material,supplier,country,value
+Shenzhen Electronics,22.5431,114.0579,Smartphone Assemblies,Foxconn,China,85000000
+Detroit Motors,42.3314,-83.0458,Electric Vehicle Drivetrains,BorgWarner,United States,120000000
+Stuttgart Precision,48.7758,9.1829,Automotive Sensors & ECUs,Bosch GmbH,Germany,63000000
+Seoul Displays,37.5665,126.978,OLED Display Panels,Samsung Display,South Korea,95000000
+Osaka Robotics,34.6937,135.5023,Industrial Robotic Arms,Fanuc Corporation,Japan,47000000
+Guadalajara Aerospace,20.6597,-103.3496,Aircraft Wiring Harnesses,Safran SA,Mexico,38000000`;
 
 export default function SupplyPanel() {
   const {
-    headquartersLocation, setHeadquartersLocation, setSupplyPoints,
+    headquartersLocation, setHeadquartersLocation,
+    supplyPoints, setSupplyPoints,
     currentJobId, setCurrentJobId,
     panelMode, setPanelMode,
     analysisResult, setAnalysisResult,
@@ -62,6 +67,7 @@ export default function SupplyPanel() {
     supplierResearch, setSupplierResearch,
     streamedRisks, setStreamedRisks,
     streamedAlternatives, setStreamedAlternatives,
+    setFocusLocation,
     simulationResults, setSimulationResults,
     simulationLoading, setSimulationLoading,
   } = useAppContext();
@@ -187,10 +193,6 @@ export default function SupplyPanel() {
 
       // Switch to analysis mode after successful upload
       setPanelMode('analysis');
-
-      // Auto-trigger streaming analysis if we got a jobId
-      // (note: currentJobId may not be set yet due to React batching,
-      //  so we use the jobId from the response we just captured)
     } catch (err) {
       setUploadStatus('error');
       setStatusMessage(err instanceof Error ? err.message : 'Upload failed.');
@@ -257,6 +259,18 @@ export default function SupplyPanel() {
 
   // Simulation scenario input
   const [scenarioText, setScenarioText] = useState('');
+
+  // Pan globe to a supply node by backend ID (matched via supplier name)
+  const focusNode = (nodeId: string) => {
+    let pt = supplyPoints.find(p => p.id === nodeId);
+    if (!pt) {
+      const res = supplierResearch.find(r => r.node_id === nodeId);
+      if (res) {
+        pt = supplyPoints.find(p => p.supplier === res.supplier || p.name === res.supplier);
+      }
+    }
+    if (pt) setFocusLocation({ lat: pt.lat, lng: pt.lng });
+  };
 
   const tabs: { key: UploadTab; label: string; icon: React.ReactNode }[] = [
     { key: 'csv', label: 'CSV', icon: <FileText size={14} /> },
@@ -519,7 +533,7 @@ export default function SupplyPanel() {
                     <Search size={14} /> Supplier Research ({supplierResearch.length})
                   </div>
                   {supplierResearch.map((res, i) => (
-                    <div key={i} className={styles.riskItem}>
+                    <div key={i} className={styles.riskItem} onClick={() => focusNode(res.node_id)} style={{ cursor: 'pointer' }}>
                       <span className={`${styles.severityBadge} ${styles.severity_low}`}>
                         {res.sub_components.length} sub
                       </span>
@@ -539,7 +553,7 @@ export default function SupplyPanel() {
                     <AlertTriangle size={14} /> Risks ({streamedRisks.length})
                   </div>
                   {streamedRisks.map((risk, i) => (
-                    <div key={i} className={styles.riskItem}>
+                    <div key={i} className={styles.riskItem} onClick={() => focusNode(risk.node_id)} style={{ cursor: 'pointer' }}>
                       <span className={`${styles.severityBadge} ${styles[`severity_${risk.severity}`]}`}>
                         {risk.severity}
                       </span>
@@ -556,7 +570,7 @@ export default function SupplyPanel() {
                     <Lightbulb size={14} /> Alternatives ({streamedAlternatives.length})
                   </div>
                   {streamedAlternatives.map((alt, i) => (
-                    <div key={i} className={styles.altItem}>
+                    <div key={i} className={styles.altItem} onClick={() => setFocusLocation({ lat: alt.lat, lng: alt.lng })} style={{ cursor: 'pointer' }}>
                       <strong>{alt.suggested_supplier}</strong> in {alt.suggested_country}
                       <p className={styles.altReason}>{alt.reason}</p>
                     </div>
@@ -581,11 +595,15 @@ export default function SupplyPanel() {
               )}
 
               <button
-                className={styles.actionBtn}
+                className={`${styles.analysisBtn} ${(!currentJobId || analysisLoading) ? styles.analysisBtnDisabled : ''}`}
                 onClick={handleRunAnalysis}
                 disabled={!currentJobId || analysisLoading}
               >
-                <Play size={14} /> {analysisResult ? 'Re-run Analysis' : 'Run Analysis'}
+                {analysisLoading ? (
+                  <><Loader2 size={14} className={styles.spinner} /> Analysing…</>
+                ) : (
+                  <><Play size={14} /> {analysisResult ? 'Re-run Analysis' : 'Run Analysis'}</>
+                )}
               </button>
             </motion.div>
           )}
