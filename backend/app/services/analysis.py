@@ -25,6 +25,7 @@ from ..models.schemas import (
     SubComponent,
 )
 from .backboard import ask_analysis_research, ask_analysis_risk
+from .job_store import save_analysis_result
 
 log = logging.getLogger(__name__)
 
@@ -111,6 +112,8 @@ async def run_analysis_stream(
         summary=summary,
     )
 
+    save_analysis_result(job_id, result)
+
     yield _sse("risk", {
         "job_id": job_id,
         "risks": [r.model_dump() for r in risks],
@@ -128,13 +131,14 @@ async def run_analysis(job_id: str, chain: SupplyChainData) -> AnalysisResult:
     """Execute the full analysis pipeline and return final AnalysisResult."""
     last: dict = {}
     async for event in run_analysis_stream(job_id, chain):
-        # Parse the last 'done' event
         for line in event.strip().split("\n"):
             if line.startswith("data: "):
                 last = json.loads(line[6:])
     if last:
         return AnalysisResult(**last)
-    return _fallback_analysis(job_id, chain)
+    result = _fallback_analysis(job_id, chain)
+    save_analysis_result(job_id, result)
+    return result
 
 
 # ── Phase runners ────────────────────────────────────────────────────
