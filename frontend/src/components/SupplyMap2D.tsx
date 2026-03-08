@@ -1,10 +1,9 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useCallback, useRef, useEffect } from 'react';
 import {
   ComposableMap,
   Geographies,
   Geography,
   Marker,
-  ZoomableGroup,
   Graticule,
 } from 'react-simple-maps';
 import { geoNaturalEarth1 } from 'd3-geo';
@@ -132,6 +131,49 @@ export default function SupplyMap2D({
     text: string;
   } | null>(null);
 
+  // Custom zoom state — clamped between 1× and 6×
+  const MIN_ZOOM = 1;
+  const MAX_ZOOM = 6;
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState<[number, number]>([0, 0]);
+  const isPanning = useRef(false);
+  const lastMouse = useRef<[number, number]>([0, 0]);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Attach native wheel listener with { passive: false } so preventDefault works
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setZoom(z => {
+        const next = z * (e.deltaY < 0 ? 1.12 : 0.89);
+        return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, next));
+      });
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, []);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (zoom <= 1) return; // no panning at default zoom
+    isPanning.current = true;
+    lastMouse.current = [e.clientX, e.clientY];
+  }, [zoom]);
+
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!isPanning.current) return;
+    const dx = e.clientX - lastMouse.current[0];
+    const dy = e.clientY - lastMouse.current[1];
+    lastMouse.current = [e.clientX, e.clientY];
+    setPan(p => [p[0] + dx, p[1] + dy]);
+  }, []);
+
+  const handleMouseUp = useCallback(() => {
+    isPanning.current = false;
+  }, []);
+
   /**
    * Build one ArcSegment per sector per arc.
    * Multi-sector arcs are offset perpendicular to the arc direction.
@@ -218,7 +260,14 @@ export default function SupplyMap2D({
   }, [segmentedArcs]);
 
   return (
-    <div className={styles.mapContainer}>
+    <div
+      ref={containerRef}
+      className={styles.mapContainer}
+      onMouseDown={handleMouseDown}
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseUp}
+    >
       <ComposableMap
         projection="geoNaturalEarth1"
         projectionConfig={{ scale: MAP_SCALE, center: MAP_CENTER }}
@@ -227,7 +276,7 @@ export default function SupplyMap2D({
         style={{ width: '100%', height: '100%' }}
         onClick={onDismiss}
       >
-        <ZoomableGroup minZoom={1} maxZoom={8} center={MAP_CENTER} disablePanning={true}>
+        <g transform={`translate(${MAP_WIDTH / 2 + pan[0] / (MAP_WIDTH / 960)}, ${MAP_HEIGHT / 2 + pan[1] / (MAP_HEIGHT / 500)}) scale(${zoom}) translate(${-MAP_WIDTH / 2}, ${-MAP_HEIGHT / 2})`}>
           <Graticule stroke="rgba(255,255,255,0.05)" strokeWidth={0.3} />
           <Geographies geography={GEO_URL}>
             {({ geographies }: any) =>
@@ -248,13 +297,13 @@ export default function SupplyMap2D({
             }
           </Geographies>
 
-          {/* Smooth bezier arcs drawn in pixel-space — never clip at antimeridian */}
+          {/* Smooth bezier arcs drawn in pixel-space */}
           {projectedArcs.map((seg, i) => (
             <path
               key={`arc-${i}`}
               d={seg.d}
               stroke={seg.color}
-              strokeWidth={Math.max(1.2, (seg.stroke / maxStrokeValue) * 6.5)}
+              strokeWidth={Math.max(1.2, (seg.stroke / maxStrokeValue) * 6.5) / zoom}
               strokeLinecap="round"
               strokeLinejoin="round"
               strokeOpacity={0.85}
@@ -295,16 +344,16 @@ export default function SupplyMap2D({
               onMouseLeave={() => setTooltip(null)}
             >
               <circle
-                r={pt.size * 3.5}
+                r={(pt.size * 3.5) / zoom}
                 fill={pt.color}
                 stroke="rgba(255,255,255,0.4)"
-                strokeWidth={0.5}
+                strokeWidth={0.5 / zoom}
                 opacity={0.9}
                 style={{ cursor: 'pointer' }}
               />
             </Marker>
           ))}
-        </ZoomableGroup>
+        </g>
       </ComposableMap>
 
       {tooltip && (
