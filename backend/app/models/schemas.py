@@ -46,6 +46,11 @@ class SupplyNode(BaseModel):
     material: str = ""
     supplier: str = ""
     country: str = ""
+    hs_code: str = ""
+    tariff_rate: float | None = None
+    cusma_eligible: bool = False
+    cusma_rate: float | None = None
+    tariff_cost_delta: float | None = None
     value: float = 0.0  # estimated monetary value (USD) of this supply link
 
 
@@ -53,6 +58,20 @@ class SupplyChainData(BaseModel):
     """Standardised representation of an uploaded supply chain."""
     headquarters: GeoPoint | None = None
     nodes: list[SupplyNode] = []
+
+
+# ── Tariff lookup result ──────────────────────────────────────────────
+
+class TariffInfo(BaseModel):
+    """Result of a deterministic tariff database lookup."""
+    hs_code: str
+    description: str
+    mfn_rate: float
+    applied_rate: float
+    cusma_eligible: bool
+    cusma_rate: float
+    country_override: bool = False
+    notes: str = ""
 
 
 # ── Upload payloads ───────────────────────────────────────────────────

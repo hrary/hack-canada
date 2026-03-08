@@ -39,7 +39,6 @@ interface Props {
   selectedLabel: string | null;
   nodeDetail: {
     name: string;
-    material: string;
     country: string;
     value?: number;
   } | null;
@@ -266,7 +265,7 @@ export default function SupplyMap2D({
             <div className={styles.nodeDetail}>
               <strong>{nodeDetail.name}</strong>
               <span className={styles.nodeDetailRow}>
-                {nodeDetail.material} · {nodeDetail.country}
+                {nodeDetail.country}
                 {nodeDetail.value != null && ` · $${nodeDetail.value.toLocaleString()}`}
               </span>
               {nodeWorstSeverity && (

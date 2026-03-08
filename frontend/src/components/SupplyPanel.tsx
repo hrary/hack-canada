@@ -5,17 +5,22 @@ import {
   CheckCircle, AlertCircle, Loader2, BarChart3, FlaskConical,
   ArrowLeft, AlertTriangle, Lightbulb, Play, Send, Search,
   ShieldAlert, TrendingUp, TrendingDown, Zap, DollarSign, Download,
+  Calculator, ChevronDown, ChevronUp,
 } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import {
   uploadSupplyChainText,
   uploadSupplyChainImage,
+  getJobChain,
   streamAnalysis,
   runSimulation,
+  getNetTariffCost,
 } from '../api/supplyChain';
+import type { NetTariffResult } from '../api/supplyChain';
 import type { SupplyPoint, PanelMode, SimulationScenario } from '../types';
 import styles from './SupplyPanel.module.css';
 
+/** Client-side CSV parser for instant globe display (no backend round-trip). */
 function parseCSV(text: string): SupplyPoint[] {
   const lines = text.split('\n').filter(line => line.trim());
   if (lines.length < 2) return [];
@@ -93,6 +98,11 @@ export default function SupplyPanel() {
   const [imagePreview, setImagePreview] = useState('');
   const imageInputRef = useRef<HTMLInputElement>(null);
 
+  // Tariff calculator state
+  const [tariffResult, setTariffResult] = useState<NetTariffResult | null>(null);
+  const [tariffLoading, setTariffLoading] = useState(false);
+  const [tariffExpanded, setTariffExpanded] = useState(false);
+
   const handleSetHQ = () => {
     const lat = parseFloat(hqLat);
     const lng = parseFloat(hqLng);
@@ -105,7 +115,7 @@ export default function SupplyPanel() {
     setCsvContent(SAMPLE_CSV);
     setCsvFileName('sample-data.csv');
     setActiveTab('csv');
-    // Immediately show on globe
+    // Immediately show on globe (client-side parsing)
     setSupplyPoints(parseCSV(SAMPLE_CSV));
     if (!headquartersLocation) {
       setHeadquartersLocation({ lat: 43.6532, lng: -79.3832 });
@@ -138,11 +148,43 @@ export default function SupplyPanel() {
     e.target.value = '';
   };
 
+  /** Fetch the backend-parsed chain and update the globe. Returns node count. */
+  const loadChainOntoMap = async (jobId: string): Promise<number> => {
+    try {
+      const chain = await getJobChain(jobId);
+      if (chain.nodes?.length) {
+        setSupplyPoints(chain.nodes.map(n => ({
+          id: n.id,
+          name: n.name,
+          lat: n.lat,
+          lng: n.lng,
+          material: n.material || '',
+          supplier: n.supplier || '',
+          country: n.country || '',
+          value: n.value || undefined,
+        })));
+      }
+      if (chain.headquarters) {
+        setHeadquartersLocation(chain.headquarters);
+      } else if (!headquartersLocation) {
+        // Backend doesn't return HQ — use the input field values (default Toronto)
+        const lat = parseFloat(hqLat);
+        const lng = parseFloat(hqLng);
+        if (!isNaN(lat) && !isNaN(lng)) {
+          setHeadquartersLocation({ lat, lng });
+        }
+      }
+      return chain.nodes?.length ?? 0;
+    } catch {
+      return 0;
+    }
+  };
+
   const handleSubmit = async () => {
     setUploadStatus('uploading');
     setStatusMessage('');
 
-    // For CSV, parse and display on globe immediately
+    // For CSV, parse and display on globe immediately (client-side)
     if (activeTab === 'csv') {
       if (!csvContent.trim()) {
         setUploadStatus('error');
@@ -164,11 +206,13 @@ export default function SupplyPanel() {
           return;
         }
         const resp = await uploadSupplyChainImage(imageFile);
-        setCurrentJobId(resp.job_id ?? null);
+        const jobId = resp.job_id ?? null;
+        setCurrentJobId(jobId);
         setUploadStatus('success');
         setStatusMessage('Image uploaded. Processing will begin shortly.');
         setImageFile(null);
         setImagePreview('');
+        if (jobId) await loadChainOntoMap(jobId);
       } else {
         const content = activeTab === 'csv' ? csvContent : textContent;
         if (!content.trim()) {
@@ -181,7 +225,9 @@ export default function SupplyPanel() {
           content,
           fileName: activeTab === 'csv' ? csvFileName : undefined,
         });
-        setCurrentJobId(resp.job_id ?? null);
+        const jobId = resp.job_id ?? null;
+        setCurrentJobId(jobId);
+
         setUploadStatus('success');
         setStatusMessage(
           activeTab === 'csv'
@@ -190,6 +236,9 @@ export default function SupplyPanel() {
         );
         if (activeTab === 'csv') { setCsvContent(''); setCsvFileName(''); }
         else { setTextContent(''); }
+
+        // Upgrade supply points with backend IDs (important for analysis matching)
+        if (jobId) loadChainOntoMap(jobId).catch(() => {});
       }
 
       // Switch to analysis mode after successful upload
@@ -223,6 +272,8 @@ export default function SupplyPanel() {
         else if (data.phase === 'risk') setAnalysisPhase('risk');
       },
       onResearch(data) {
+        console.log('[SupplyPanel] onResearch received:', data.supplier_research?.length, 'entries',
+          data.supplier_research?.map((r: any) => `${r.supplier}:${r.sub_components?.length}subs`));
         setSupplierResearch(data.supplier_research);
         setAnalysisPhase('risk');
       },
@@ -231,9 +282,47 @@ export default function SupplyPanel() {
         setStreamedAlternatives(data.alternatives);
       },
       onDone(result) {
+        console.log('[SupplyPanel] onDone received:',
+          'nodes=', result.supply_chain?.nodes?.length,
+          'research=', result.supplier_research?.length,
+          'risks=', result.risks?.length);
+        // Refresh supply points to ensure IDs match research/risk node_ids
+        if (result.supply_chain?.nodes?.length) {
+          setSupplyPoints(result.supply_chain.nodes.map((n: any) => ({
+            id: n.id,
+            name: n.name,
+            lat: n.lat,
+            lng: n.lng,
+            material: n.material || '',
+            supplier: n.supplier || '',
+            country: n.country || '',
+            value: n.value || undefined,
+          })));
+        }
+        // Re-sync research & risks from the done payload (belt-and-suspenders:
+        // guarantees the globe has data even if an earlier SSE event was missed)
+        if (result.supplier_research?.length) {
+          setSupplierResearch(result.supplier_research);
+        }
+        if (result.risks?.length) {
+          setStreamedRisks(result.risks);
+        }
+        if (result.alternatives?.length) {
+          setStreamedAlternatives(result.alternatives);
+        }
         setAnalysisResult(result);
         setAnalysisPhase('done');
         setAnalysisLoading(false);
+
+        // Auto-calculate tariff after analysis completes
+        const jid = result.job_id || currentJobId;
+        if (jid) {
+          setTariffLoading(true);
+          getNetTariffCost(jid)
+            .then(r => setTariffResult(r))
+            .catch(() => setTariffResult(null))
+            .finally(() => setTariffLoading(false));
+        }
       },
       onError() {
         setAnalysisPhase('done');
@@ -245,6 +334,7 @@ export default function SupplyPanel() {
   const handleRunSimulation = async () => {
     if (!currentJobId || !scenarioText.trim()) return;
     setSimulationLoading(true);
+    setSimulationError('');
     try {
       const scenario: SimulationScenario = {
         description: scenarioText,
@@ -252,15 +342,39 @@ export default function SupplyPanel() {
       };
       const results = await runSimulation(currentJobId, [scenario]);
       setSimulationResults(results);
-    } catch {
+
+      // Auto-calculate tariff after simulation completes
+      setTariffLoading(true);
+      getNetTariffCost(currentJobId)
+        .then(r => setTariffResult(r))
+        .catch(() => setTariffResult(null))
+        .finally(() => setTariffLoading(false));
+    } catch (err) {
       setSimulationResults([]);
+      setSimulationError(
+        err instanceof Error ? err.message : 'Simulation failed. Please try again.',
+      );
     } finally {
       setSimulationLoading(false);
     }
   };
 
+  const handleCalculateTariff = async () => {
+    if (!currentJobId) return;
+    setTariffLoading(true);
+    try {
+      const result = await getNetTariffCost(currentJobId);
+      setTariffResult(result);
+    } catch {
+      setTariffResult(null);
+    } finally {
+      setTariffLoading(false);
+    }
+  };
+
   // Simulation scenario input
   const [scenarioText, setScenarioText] = useState('');
+  const [simulationError, setSimulationError] = useState('');
 
   const handleExportJSON = () => {
     const payload = {
@@ -552,6 +666,84 @@ export default function SupplyPanel() {
                 </div>
               )}
 
+              {/* ── Prominent tariff banner (top of analysis) ──── */}
+              {tariffResult && (
+                <div className={styles.tariffBanner}>
+                  <div className={styles.tariffBannerHeader}>
+                    <DollarSign size={22} />
+                    <span className={styles.tariffBannerPct} style={{
+                      color: tariffResult.net_tariff_pct > 10
+                        ? '#f87171' : tariffResult.net_tariff_pct > 3
+                          ? '#fbbf24' : '#4ade80',
+                    }}>
+                      {tariffResult.net_tariff_pct.toFixed(2)}%
+                    </span>
+                    <span className={styles.tariffBannerLabel}>Net Tariff Rate</span>
+                  </div>
+                  <div className={styles.tariffBannerStats}>
+                    <div>
+                      <span className={styles.tariffBannerStatVal}>
+                        ${tariffResult.total_goods_value.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                      </span>
+                      <span className={styles.tariffBannerStatLbl}>Total Value</span>
+                    </div>
+                    <div>
+                      <span className={styles.tariffBannerStatVal}>
+                        ${tariffResult.total_tariff_cost.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                      </span>
+                      <span className={styles.tariffBannerStatLbl}>Tariff Cost</span>
+                    </div>
+                  </div>
+
+                  {/* Expand/collapse per-node breakdown */}
+                  <button
+                    className={styles.tariffToggle}
+                    onClick={() => setTariffExpanded(!tariffExpanded)}
+                  >
+                    {tariffExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                    {tariffExpanded ? 'Hide' : 'Show'} per-node breakdown ({tariffResult.nodes.length})
+                  </button>
+
+                  {tariffExpanded && (
+                    <div className={styles.tariffBreakdown}>
+                      {tariffResult.nodes.map((node, i) => (
+                        <div key={i} className={styles.tariffNodeRow} onClick={() => focusNode(node.node_id)} style={{ cursor: 'pointer' }}>
+                          <div className={styles.tariffNodeHeader}>
+                            <strong>{node.name}</strong>
+                            <span className={`${styles.tariffRateBadge} ${
+                              node.rate_type === 'country_override' ? styles.tariffBadgeOverride
+                                : node.rate_type === 'mfn' ? styles.tariffBadgeMfn
+                                  : styles.tariffBadgeFta
+                            }`}>
+                              {node.applied_rate != null ? `${node.applied_rate}%` : '—'}
+                            </span>
+                          </div>
+                          <div className={styles.tariffNodeMeta}>
+                            {node.country} · {node.hs_code || 'No HS code'}
+                            {node.value > 0 && ` · $${node.value.toLocaleString()}`}
+                          </div>
+                          <div className={styles.tariffNodeNotes}>
+                            {node.notes}
+                            {node.tariff_cost > 0 && (
+                              <span className={styles.tariffCostTag}>
+                                ${node.tariff_cost.toLocaleString()}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {tariffLoading && !tariffResult && (
+                <div className={styles.loadingRow}>
+                  <Loader2 size={14} className={styles.spinner} />
+                  <span>Calculating tariffs…</span>
+                </div>
+              )}
+
               {/* Research results (shown as soon as phase 1 completes) */}
               {supplierResearch.length > 0 && (
                 <div className={styles.resultCard}>
@@ -694,6 +886,13 @@ export default function SupplyPanel() {
               {!currentJobId && (
                 <div className={styles.simHint}>
                   Upload and analyse your supply chain first to enable simulation.
+                </div>
+              )}
+
+              {simulationError && (
+                <div className={styles.simulationError}>
+                  <AlertCircle size={14} />
+                  {simulationError}
                 </div>
               )}
 

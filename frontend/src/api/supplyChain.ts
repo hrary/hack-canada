@@ -86,6 +86,18 @@ export async function uploadSupplyChainImage(
   return postFormData<SupplyChainImageResponse>('/supply-chain/upload/image', formData);
 }
 
+/** Fetch the parsed supply chain for a given job (nodes + headquarters). */
+export async function getJobChain(jobId: string): Promise<{
+  headquarters: { lat: number; lng: number } | null;
+  nodes: Array<{
+    id: string; name: string; lat: number; lng: number;
+    material: string; supplier: string; country: string;
+    value?: number;
+  }>;
+}> {
+  return getJSON(`/supply-chain/job/${encodeURIComponent(jobId)}`);
+}
+
 // ─── Analysis API ────────────────────────────────────────────────────
 
 /**
@@ -199,4 +211,36 @@ export function streamAnalysis(
   })();
 
   return controller;
+}
+
+// ─── Tariff Calculator API ───────────────────────────────────────────
+
+export interface TariffNodeResult {
+  node_id: string;
+  name: string;
+  country: string;
+  material: string;
+  hs_code: string | null;
+  description?: string;
+  value: number;
+  mfn_rate: number | null;
+  applied_rate: number | null;
+  tariff_cost: number;
+  rate_type: string;
+  notes: string;
+}
+
+export interface NetTariffResult {
+  nodes: TariffNodeResult[];
+  total_goods_value: number;
+  total_tariff_cost: number;
+  net_tariff_pct: number;
+  summary: string;
+}
+
+/**
+ * Calculate the net tariff cost percentage for a job's supply chain.
+ */
+export async function getNetTariffCost(jobId: string): Promise<NetTariffResult> {
+  return getJSON<NetTariffResult>(`/tariff/net-cost/${encodeURIComponent(jobId)}`);
 }

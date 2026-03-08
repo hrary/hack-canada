@@ -8,7 +8,8 @@ from ..models.schemas import (
     SupplyChainData,
 )
 from ..services.parser import parse_supply_chain_text, parse_supply_chain_text_async
-from ..services.job_store import jobs, save_parsed_chain
+from ..services.tariff_lookup import enrich_chain
+from ..services.job_store import save_parsed_chain, get_parsed_chain as load_chain
 
 router = APIRouter()
 
@@ -24,6 +25,9 @@ async def upload_text(payload: TextUploadRequest):
     parsed: SupplyChainData = await parse_supply_chain_text_async(
         payload.content, fmt=payload.format
     )
+
+    # Deterministic tariff enrichment — attaches HS codes, rates, CUSMA flags
+    parsed = enrich_chain(parsed)
 
     resp = UploadResponse(success=True, message=f"Parsed {len(parsed.nodes)} nodes.")
     save_parsed_chain(resp.job_id, parsed)
@@ -55,9 +59,9 @@ async def upload_image(file: UploadFile = File(...)):
 
 
 @router.get("/job/{job_id}", response_model=SupplyChainData)
-async def get_parsed_chain(job_id: str):
+async def get_job(job_id: str):
     """Return the parsed supply chain for a given job."""
-    chain = jobs.get(job_id)
+    chain = load_chain(job_id)
     if chain is None:
         raise HTTPException(status_code=404, detail="Job not found.")
     return chain
