@@ -3,7 +3,7 @@
 from fastapi import APIRouter, HTTPException
 
 from ..models.schemas import SimulationRequest, SimulationResult
-from ..services.job_store import get_parsed_chain, save_simulation_results
+from ..services.job_store import jobs
 from ..services.simulation import run_simulation
 
 router = APIRouter()
@@ -16,7 +16,7 @@ async def simulate(request: SimulationRequest):
     - "What if the US applies a 25 % tariff on Chinese imports?"
     - "What if a new EU-Mercosur trade deal is signed?"
     """
-    chain = get_parsed_chain(request.job_id)
+    chain = jobs.get(request.job_id)
     if chain is None:
         raise HTTPException(status_code=404, detail="Job not found – upload first.")
 
@@ -25,5 +25,4 @@ async def simulate(request: SimulationRequest):
         result = await run_simulation(request.job_id, chain, scenario)
         results.append(result)
 
-    save_simulation_results(request.job_id, results)
     return results

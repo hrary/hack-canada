@@ -10,7 +10,6 @@ specific named suppliers rather than generalising.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import re
@@ -212,16 +211,10 @@ text (an article, email, report, etc.) that describes a company's supply chain.
 Extract every supply-chain node you can find.
 
 For each node output:
-  name, lat, lng, material, supplier, country, hs_code
+  name, lat, lng, material, supplier, country
 
 Use realistic latitude/longitude for the location described.  If unsure of
 exact coords, use the centroid of the city, state, or country mentioned.
-
-For hs_code: infer the most likely 4-6 digit Harmonized System (HS) code for
-the material or product described.  Use the standard international HS
-classification (e.g. "7214.10" for steel bars, "8542.31" for processors,
-"5201.00" for raw cotton).  If you are unsure, provide your best guess —
-a 4-digit heading is acceptable.
 
 Always respond with valid JSON matching the schema provided in the user message.
 Do NOT include markdown fences or commentary outside the JSON object.
@@ -318,8 +311,8 @@ async def _ask(role: str, system_prompt: str, user_message: str) -> dict:
         stream=False,
     )
 
-    # ── Tool-call loop (max 25 rounds; tool calls within a round run in parallel) ────
-    MAX_TOOL_ROUNDS = 25
+    # ── Tool-call loop (max 15 rounds to prevent infinite cycles) ────
+    MAX_TOOL_ROUNDS = 15
     for _round in range(MAX_TOOL_ROUNDS):
         if not (
             getattr(response, "status", None) == "REQUIRES_ACTION"
@@ -327,13 +320,14 @@ async def _ask(role: str, system_prompt: str, user_message: str) -> dict:
         ):
             break
 
-        # Execute all tool calls in this round concurrently
-        async def _exec_tool(tc, round_num=_round):  # noqa: E306
+        tool_outputs: list[dict] = []
+        for tc in response.tool_calls:
             fn_name = tc.function.name
             args = tc.function.parsed_arguments or {}
             handler = TOOL_HANDLERS.get(fn_name)
+
             if handler:
-                log.info("Tool call [round %d]: %s(%s)", round_num + 1, fn_name, args)
+                log.info("Tool call: %s(%s)", fn_name, args)
                 try:
                     result = await handler(**args)
                 except Exception as exc:
@@ -341,50 +335,18 @@ async def _ask(role: str, system_prompt: str, user_message: str) -> dict:
                     result = f"(Error: {exc})"
             else:
                 result = f"(Unknown tool: {fn_name})"
-            return {"tool_call_id": tc.id, "output": str(result)}
 
-        tool_outputs = await asyncio.gather(
-            *[_exec_tool(tc) for tc in response.tool_calls]
-        )
+            tool_outputs.append(
+                {"tool_call_id": tc.id, "output": str(result)}
+            )
 
         response = await client.submit_tool_outputs(
             thread_id=thread.thread_id,
             run_id=response.run_id,
-            tool_outputs=list(tool_outputs),
+            tool_outputs=tool_outputs,
         )
 
-    # If the model still wants to call tools after MAX_TOOL_ROUNDS,
-    # submit "limit reached" outputs so it completes on the SAME thread
-    # (preserving all conversation context).
-    WIND_DOWN_ROUNDS = 5
-    for _ in range(WIND_DOWN_ROUNDS):
-        if not (
-            getattr(response, "status", None) == "REQUIRES_ACTION"
-            and getattr(response, "tool_calls", None)
-        ):
-            break
-        log.warning(
-            "Tool-call loop exhausted for role=%s; winding down (%d pending tool calls).",
-            role, len(response.tool_calls),
-        )
-        wind_outputs = [
-            {
-                "tool_call_id": tc.id,
-                "output": (
-                    "(SEARCH LIMIT REACHED — do NOT request any more tool calls. "
-                    "Return your complete JSON response now with all the data "
-                    "you have collected so far.)"
-                ),
-            }
-            for tc in response.tool_calls
-        ]
-        response = await client.submit_tool_outputs(
-            thread_id=thread.thread_id,
-            run_id=response.run_id,
-            tool_outputs=wind_outputs,
-        )
-
-    raw = (getattr(response, "content", None) or "").strip()
+    raw = response.content.strip()
 
     # Strip markdown code fences if the model wraps anyway
     if raw.startswith("```"):

@@ -13,23 +13,23 @@ interface Props {
 }
 
 /* ── Severity colour scheme ─────────────────────────────────────────── *
- * high / critical = red,  medium = yellow / orange,
- * low + unanalysed (default) = blue                                     */
+ * high  = red,  medium = yellow/orange,  low = green,  critical = purple
+ * Default (unanalysed) = cyan — avoids confusion with severity colours  */
 
 const SEVERITY_ARC_COLORS: Record<RiskSeverity, [string, string]> = {
-  low: ['#3b82f6', '#60a5fa'],
+  low: ['#22c55e', '#4ade80'],
   medium: ['#f59e0b', '#fbbf24'],
   high: ['#ef4444', '#f87171'],
-  critical: ['#ef4444', '#f87171'],
+  critical: ['#a855f7', '#c084fc'],
 };
 
-const DEFAULT_ARC_COLOR: [string, string] = ['#3b82f6', '#60a5fa'];
+const DEFAULT_ARC_COLOR: [string, string] = ['#06b6d4', '#22d3ee'];
 
 const SEVERITY_COLORS: Record<RiskSeverity, string> = {
-  low: '#3b82f6',
+  low: '#22c55e',
   medium: '#f59e0b',
   high: '#ef4444',
-  critical: '#ef4444',
+  critical: '#a855f7',
 };
 
 /* ── Value → line thickness ─────────────────────────────────────────── */
@@ -90,106 +90,62 @@ export default function SupplyGlobe({ supplyPoints, headquartersLocation }: Prop
     return m;
   }, [streamedRisks]);
 
-  /* ── Node ID → SupplyPoint matching ─────────────────────────── */
+  /* ── Node ID → SupplyPoint matching by supplier name ──────────── */
   const nodeIdToPoint = useMemo(() => {
     const m = new Map<string, SupplyPoint>();
     for (const res of supplierResearch) {
-      // Primary: match by backend node_id → supply point id (both from backend)
-      let pt = supplyPoints.find(p => p.id === res.node_id);
-      // Fallback 1: exact name match
-      if (!pt) pt = supplyPoints.find(
+      const pt = supplyPoints.find(
         p => p.supplier === res.supplier || p.name === res.supplier,
       );
-      // Fallback 2: case-insensitive trimmed match
-      if (!pt) {
-        const rSup = res.supplier.trim().toLowerCase();
-        pt = supplyPoints.find(
-          p => p.supplier.trim().toLowerCase() === rSup
-            || p.name.trim().toLowerCase() === rSup,
-        );
-      }
       if (pt) m.set(res.node_id, pt);
     }
-    console.log('[SupplyGlobe] nodeIdToPoint:', m.size, '/', supplierResearch.length,
-      'matched. SP ids:', supplyPoints.map(p => p.id).join(','),
-      'Research node_ids:', supplierResearch.map(r => r.node_id).join(','));
     return m;
   }, [supplierResearch, supplyPoints]);
 
   const pointSeverityMap = useMemo(() => {
     const m = new Map<string, RiskSeverity>();
-    // Bridge via research: nodeIdToPoint maps research node_id → supply point
     for (const [nid, pt] of nodeIdToPoint) {
       const sev = severityMap.get(nid);
       if (sev) m.set(pt.id, sev);
     }
-    // Direct fallback: risk node_id matches supply point id (both from backend chain)
-    for (const pt of supplyPoints) {
-      if (!m.has(pt.id)) {
-        const sev = severityMap.get(pt.id);
-        if (sev) m.set(pt.id, sev);
-      }
-    }
     return m;
-  }, [nodeIdToPoint, severityMap, supplyPoints]);
+  }, [nodeIdToPoint, severityMap]);
 
   /* ── Simulation impact → frontend point ID ────────────────────── */
   const simPointSeverityMap = useMemo(() => {
     const m = new Map<string, string>();
     if (simulationImpactMap.size === 0) return m;
-    // Bridge via research
     for (const [nid, pt] of nodeIdToPoint) {
       const sev = simulationImpactMap.get(nid);
       if (sev) m.set(pt.id, sev);
     }
-    // Direct fallback: sim node_id matches supply point id
-    for (const pt of supplyPoints) {
-      if (!m.has(pt.id)) {
-        const sev = simulationImpactMap.get(pt.id);
-        if (sev) m.set(pt.id, sev);
-      }
-    }
     return m;
-  }, [nodeIdToPoint, simulationImpactMap, supplyPoints]);
+  }, [nodeIdToPoint, simulationImpactMap]);
 
   /* ── Sub-component points ─────────────────────────────────────── */
   const subPoints = useMemo(() => {
     const pts: MapPoint[] = [];
-    console.log('[SupplyGlobe] subPoints: research entries=', supplierResearch.length,
-      'nodeIdToPoint size=', nodeIdToPoint.size);
     for (const res of supplierResearch) {
-      const parent = nodeIdToPoint.get(res.node_id);
-      const count = res.sub_components.length;
-      for (let idx = 0; idx < count; idx++) {
-        const sc = res.sub_components[idx];
-        let lat = sc.lat;
-        let lng = sc.lng;
-        // If LLM didn't provide coords, place near parent with circular offset
-        if (!lat && !lng) {
-          if (!parent) continue;
-          const angle = (2 * Math.PI * idx) / Math.max(count, 1);
-          lat = parent.lat + Math.cos(angle) * 2;
-          lng = parent.lng + Math.sin(angle) * 2;
-        }
+      for (const sc of res.sub_components) {
+        if (!sc.lat && !sc.lng) continue;
         pts.push({
-          lat,
-          lng,
+          lat: sc.lat,
+          lng: sc.lng,
           size: 0.7,
           color: '#facc15',
           label: `${sc.component} — ${sc.source_company || sc.source_country}`,
         });
       }
     }
-    console.log('[SupplyGlobe] subPoints computed:', pts.length, 'sub-node points');
     return pts;
-  }, [supplierResearch, nodeIdToPoint]);
+  }, [supplierResearch]);
 
   /* ── Raw arcs (before overlap enrichment) ─────────────────────── */
   const SIM_COLORS: Record<string, [string, string]> = {
-    low: ['#3b82f6', '#60a5fa'],
+    low: ['#22c55e', '#4ade80'],
     medium: ['#f59e0b', '#fbbf24'],
     high: ['#ef4444', '#f87171'],
-    critical: ['#ef4444', '#f87171'],
+    critical: ['#a855f7', '#c084fc'],
   };
 
   const rawPrimaryArcs = useMemo(() => {
@@ -227,10 +183,9 @@ export default function SupplyGlobe({ supplyPoints, headquartersLocation }: Prop
       color: [string, string]; label: string; value?: number; isSub: boolean;
     }[] = [];
     const hasSim = simulationImpactMap.size > 0;
-    let skippedNoParent = 0;
     for (const res of supplierResearch) {
       const parent = nodeIdToPoint.get(res.node_id);
-      if (!parent) { skippedNoParent++; continue; }
+      if (!parent) continue;
       const sev = pointSeverityMap.get(parent.id);
       const simSev = simPointSeverityMap.get(parent.id);
       let color: [string, string];
@@ -241,19 +196,11 @@ export default function SupplyGlobe({ supplyPoints, headquartersLocation }: Prop
       } else {
         color = sev ? SEVERITY_ARC_COLORS[sev] : DEFAULT_ARC_COLOR;
       }
-      const scCount = res.sub_components.length;
-      for (let idx = 0; idx < scCount; idx++) {
-        const sc = res.sub_components[idx];
-        let lat = sc.lat;
-        let lng = sc.lng;
-        if (!lat && !lng) {
-          const angle = (2 * Math.PI * idx) / Math.max(scCount, 1);
-          lat = parent.lat + Math.cos(angle) * 2;
-          lng = parent.lng + Math.sin(angle) * 2;
-        }
+      for (const sc of res.sub_components) {
+        if (!sc.lat && !sc.lng) continue;
         arcs.push({
-          startLat: lat,
-          startLng: lng,
+          startLat: sc.lat,
+          startLng: sc.lng,
           endLat: parent.lat,
           endLng: parent.lng,
           color,
@@ -263,16 +210,12 @@ export default function SupplyGlobe({ supplyPoints, headquartersLocation }: Prop
         });
       }
     }
-    console.log('[SupplyGlobe] rawSubArcs:', arcs.length, 'created,', skippedNoParent, 'skipped (no parent).',
-      'supplierResearch entries:', supplierResearch.length,
-      'Total sub_components:', supplierResearch.reduce((s, r) => s + (r.sub_components?.length || 0), 0));
     return arcs;
   }, [supplierResearch, nodeIdToPoint, pointSeverityMap, simPointSeverityMap, simulationImpactMap]);
 
   /* ── Assign overlap groups & compute stroke / altitude ────────── */
   const enrichedArcs = useMemo(() => {
     const all = [...rawPrimaryArcs, ...rawSubArcs];
-    console.log('[SupplyGlobe] enrichedArcs: primary=', rawPrimaryArcs.length, 'sub=', rawSubArcs.length, 'total=', all.length);
 
     // Group arcs that share BOTH rounded start AND end (truly overlapping)
     const groups = new Map<string, number[]>();
@@ -347,16 +290,14 @@ export default function SupplyGlobe({ supplyPoints, headquartersLocation }: Prop
 
   /* ── Points data (shared between 2D & 3D) ────────────────────── */
   const SIM_NODE_COLORS: Record<string, string> = {
-    low: '#3b82f6',
+    low: '#22c55e',
     medium: '#f59e0b',
     high: '#ef4444',
-    critical: '#ef4444',
+    critical: '#a855f7',
   };
 
   const pointsData: MapPoint[] = useMemo(() => {
     const hasSim = simulationImpactMap.size > 0;
-    console.log('[SupplyGlobe] pointsData: supplyPoints=', supplyPoints.length,
-      'subPoints=', subPoints.length, 'hq=', !!headquartersLocation);
     return [
       ...supplyPoints.map(pt => {
         const sev = pointSeverityMap.get(pt.id);
@@ -367,7 +308,7 @@ export default function SupplyGlobe({ supplyPoints, headquartersLocation }: Prop
           color = simSev ? (SIM_NODE_COLORS[simSev] ?? '#f59e0b') : '#374151';
           size = simSev ? 1.5 : 0.6; // affected nodes bigger, unaffected shrink
         } else {
-          color = sev ? SEVERITY_COLORS[sev] : '#3b82f6';
+          color = sev ? SEVERITY_COLORS[sev] : '#22d3ee';
           size = 1.0;
         }
         return {
@@ -375,7 +316,7 @@ export default function SupplyGlobe({ supplyPoints, headquartersLocation }: Prop
           lng: pt.lng,
           size,
           color,
-          label: `${pt.name}${simSev ? ` [SIM: ${simSev.toUpperCase()}]` : sev ? ` [${sev.toUpperCase()}]` : ''}`,
+          label: `${pt.name} — ${pt.material}${simSev ? ` [SIM: ${simSev.toUpperCase()}]` : sev ? ` [${sev.toUpperCase()}]` : ''}`,
         };
       }),
       ...subPoints,
@@ -455,13 +396,9 @@ export default function SupplyGlobe({ supplyPoints, headquartersLocation }: Prop
   /* ── Lookup helpers for selected node details ──────────────────── */
   const selectedResearch = useMemo(() => {
     if (!selectedNode) return null;
-    // Primary: match by backend node_id
-    let res = supplierResearch.find(r => r.node_id === selectedNode.id);
-    // Fallback: match by name
-    if (!res) res = supplierResearch.find(
+    return supplierResearch.find(
       r => r.supplier === selectedNode.supplier || r.supplier === selectedNode.name,
-    );
-    return res ?? null;
+    ) ?? null;
   }, [selectedNode, supplierResearch]);
 
   const selectedRisks = useMemo(() => {
@@ -523,13 +460,13 @@ export default function SupplyGlobe({ supplyPoints, headquartersLocation }: Prop
             onPointClick={handlePointClick3D}
             // Arcs — stroke & altitude driven by datum
             arcsData={arcsData3D}
-            arcColor={(d: any) => d.color}
+            arcColor="color"
             arcLabel={handleArcLabel}
             arcDashLength={0.5}
             arcDashGap={0.3}
             arcDashAnimateTime={2000}
-            arcStroke={(d: any) => d.stroke}
-            arcAltitudeAutoScale={(d: any) => d.altitudeScale}
+            arcStroke="stroke"
+            arcAltitudeAutoScale="altitudeScale"
             onArcClick={handleArcClick3D}
             // Globe background click
             onGlobeClick={handleDismiss}
@@ -548,9 +485,9 @@ export default function SupplyGlobe({ supplyPoints, headquartersLocation }: Prop
             <div className={styles.infoBox}>
               {selectedNode ? (
                 <div className={styles.nodeDetail}>
-                  <strong>{selectedNode.name}</strong>
+                  <strong>{selectedNode.supplier || selectedNode.name}</strong>
                   <span className={styles.nodeDetailRow}>
-                    {selectedNode.country}
+                    {selectedNode.material} · {selectedNode.country}
                     {selectedNode.value != null && ` · $${selectedNode.value.toLocaleString()}`}
                   </span>
                   {worstSeverity && (
@@ -558,15 +495,15 @@ export default function SupplyGlobe({ supplyPoints, headquartersLocation }: Prop
                       className={styles.riskBadge}
                       style={{
                         background:
-                          worstSeverity === 'critical' ? 'rgba(239,68,68,0.25)' :
+                          worstSeverity === 'critical' ? 'rgba(168,85,247,0.25)' :
                           worstSeverity === 'high' ? 'rgba(239,68,68,0.25)' :
                           worstSeverity === 'medium' ? 'rgba(245,158,11,0.25)' :
-                          'rgba(59,130,246,0.25)',
+                          'rgba(34,197,94,0.25)',
                         color:
-                          worstSeverity === 'critical' ? '#f87171' :
+                          worstSeverity === 'critical' ? '#c084fc' :
                           worstSeverity === 'high' ? '#f87171' :
                           worstSeverity === 'medium' ? '#fbbf24' :
-                          '#60a5fa',
+                          '#4ade80',
                       }}
                     >
                       {worstSeverity} risk
@@ -615,7 +552,8 @@ export default function SupplyGlobe({ supplyPoints, headquartersLocation }: Prop
           pointsData={pointsData}
           selectedLabel={selectedLabel}
           nodeDetail={selectedNode ? {
-            name: selectedNode.name,
+            name: selectedNode.supplier || selectedNode.name,
+            material: selectedNode.material,
             country: selectedNode.country,
             value: selectedNode.value,
           } : null}

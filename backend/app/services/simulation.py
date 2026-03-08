@@ -130,11 +130,6 @@ ADDITIONAL RULES:
         log.exception("Backboard simulation call failed – falling back to stubs")
         return _fallback_simulation(job_id, chain, scenario)
 
-    # Guard: LLM might return a non-dict (e.g. a JSON array)
-    if not isinstance(data, dict):
-        log.warning("Simulation LLM returned non-dict: %s", type(data))
-        return _fallback_simulation(job_id, chain, scenario)
-
     impacts: list[NodeImpact] = []
     for i in data.get("impacts", []):
         try:
@@ -163,10 +158,7 @@ ADDITIONAL RULES:
         except (KeyError, ValueError, TypeError):
             continue
 
-    try:
-        total_impact = float(data.get("total_cost_impact_pct", 0))
-    except (ValueError, TypeError):
-        total_impact = 0.0
+    total_impact = float(data.get("total_cost_impact_pct", 0))
 
     summary = data.get(
         "summary",
