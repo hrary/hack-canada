@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
 from ..models.schemas import AnalysisResult, JobStatus
-from ..services.job_store import jobs
+from ..services.job_store import jobs, analysis_results
 from ..services.analysis import run_analysis, run_analysis_stream
 
 router = APIRouter()
@@ -52,6 +52,10 @@ async def get_analysis_result(job_id: str):
     chain = jobs.get(job_id)
     if chain is None:
         raise HTTPException(status_code=404, detail="Job not found.")
+
+    cached = analysis_results.get(job_id)
+    if cached is not None:
+        return cached
 
     return AnalysisResult(
         job_id=job_id,

@@ -4,7 +4,7 @@ import {
   Upload, FileText, Image, Type, MapPin, Package,
   CheckCircle, AlertCircle, Loader2, BarChart3, FlaskConical,
   ArrowLeft, AlertTriangle, Lightbulb, Play, Send, Search,
-  ShieldAlert, TrendingUp, TrendingDown, Zap, DollarSign,
+  ShieldAlert, TrendingUp, TrendingDown, Zap, DollarSign, Download,
 } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import {
@@ -261,6 +261,26 @@ export default function SupplyPanel() {
 
   // Simulation scenario input
   const [scenarioText, setScenarioText] = useState('');
+
+  const handleExportJSON = () => {
+    const payload = {
+      supply_chain: supplyPoints,
+      analysis: analysisResult ? {
+        summary: analysisResult.summary,
+        risks: streamedRisks,
+        alternatives: streamedAlternatives,
+        supplier_research: supplierResearch,
+      } : null,
+      simulations: simulationResults.length > 0 ? simulationResults : null,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `provenance-report-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   // Pan globe to a supply node by backend ID (matched via supplier name)
   const focusNode = (nodeId: string) => {
@@ -611,6 +631,12 @@ export default function SupplyPanel() {
                   <><Play size={14} /> {analysisResult ? 'Re-run Analysis' : 'Run Analysis'}</>
                 )}
               </button>
+
+              {analysisResult && (
+                <button className={styles.exportBtn} onClick={handleExportJSON}>
+                  <Download size={14} /> Export Report
+                </button>
+              )}
             </motion.div>
           )}
 

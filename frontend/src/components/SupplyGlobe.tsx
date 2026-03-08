@@ -52,8 +52,9 @@ function valueToStroke2D(value?: number): number {
 
 export default function SupplyGlobe({ supplyPoints, headquartersLocation }: Props) {
   const globeRef = useRef<any>(null);
-  const { supplierResearch, streamedRisks, focusLocation, simulationImpactMap } = useAppContext();
+  const { supplierResearch, streamedRisks, focusLocation, simulationImpactMap, analysisPhase } = useAppContext();
   const [selectedLabel, setSelectedLabel] = useState<string | null>(null);
+  const [selectedNode, setSelectedNode] = useState<SupplyPoint | null>(null);
   const [is3D, setIs3D] = useState(true);
 
   /* ── Globe initialisation (re-runs when toggling back to 3D) ───── */
@@ -352,6 +353,12 @@ export default function SupplyGlobe({ supplyPoints, headquartersLocation }: Prop
   }, [focusLocation, pointsData, is3D]);
 
   /* ── 3D click handlers ────────────────────────────────────────── */
+  const findSupplyPoint = useCallback((lat: number, lng: number) => {
+    return supplyPoints.find(
+      p => Math.abs(p.lat - lat) < 0.01 && Math.abs(p.lng - lng) < 0.01,
+    ) ?? null;
+  }, [supplyPoints]);
+
   const handlePointClick3D = useCallback((point: any) => {
     const globe = globeRef.current;
     if (globe) {
@@ -359,7 +366,8 @@ export default function SupplyGlobe({ supplyPoints, headquartersLocation }: Prop
       globe.pointOfView({ lat: point.lat, lng: point.lng, altitude: 1.5 }, 1000);
     }
     setSelectedLabel(point.label);
-  }, []);
+    setSelectedNode(findSupplyPoint(point.lat, point.lng));
+  }, [findSupplyPoint]);
 
   const handleArcClick3D = useCallback((arc: any) => {
     const globe = globeRef.current;
@@ -370,10 +378,12 @@ export default function SupplyGlobe({ supplyPoints, headquartersLocation }: Prop
       globe.pointOfView({ lat: midLat, lng: midLng, altitude: 1.8 }, 1000);
     }
     setSelectedLabel(arc.label || 'Supply Route');
+    setSelectedNode(null);
   }, []);
 
   const handleDismiss = useCallback(() => {
     setSelectedLabel(null);
+    setSelectedNode(null);
     if (is3D) {
       const globe = globeRef.current;
       if (globe) {
@@ -383,13 +393,38 @@ export default function SupplyGlobe({ supplyPoints, headquartersLocation }: Prop
     }
   }, [is3D]);
 
+  /* ── Lookup helpers for selected node details ──────────────────── */
+  const selectedResearch = useMemo(() => {
+    if (!selectedNode) return null;
+    return supplierResearch.find(
+      r => r.supplier === selectedNode.supplier || r.supplier === selectedNode.name,
+    ) ?? null;
+  }, [selectedNode, supplierResearch]);
+
+  const selectedRisks = useMemo(() => {
+    if (!selectedResearch) return [];
+    return streamedRisks.filter(r => r.node_id === selectedResearch.node_id);
+  }, [selectedResearch, streamedRisks]);
+
+  const worstSeverity = useMemo(() => {
+    if (selectedRisks.length === 0) return null;
+    const order: Record<string, number> = { low: 0, medium: 1, high: 2, critical: 3 };
+    let worst = selectedRisks[0];
+    for (const r of selectedRisks) {
+      if ((order[r.severity] ?? 0) > (order[worst.severity] ?? 0)) worst = r;
+    }
+    return worst.severity;
+  }, [selectedRisks]);
+
   /* ── 2D click handlers ────────────────────────────────────────── */
   const handlePointClick2D = useCallback((point: MapPoint) => {
     setSelectedLabel(point.label);
-  }, []);
+    setSelectedNode(findSupplyPoint(point.lat, point.lng));
+  }, [findSupplyPoint]);
 
   const handleArcClick2D = useCallback((arc: MapArc) => {
     setSelectedLabel(arc.label || 'Supply Route');
+    setSelectedNode(null);
   }, []);
 
   /* ── Label renderers (3D hover tooltips) ──────────────────────── */
@@ -448,7 +483,65 @@ export default function SupplyGlobe({ supplyPoints, headquartersLocation }: Prop
           />
           {selectedLabel && (
             <div className={styles.infoBox}>
-              <span>{selectedLabel}</span>
+              {selectedNode ? (
+                <div className={styles.nodeDetail}>
+                  <strong>{selectedNode.supplier || selectedNode.name}</strong>
+                  <span className={styles.nodeDetailRow}>
+                    {selectedNode.material} · {selectedNode.country}
+                    {selectedNode.value != null && ` · $${selectedNode.value.toLocaleString()}`}
+                  </span>
+                  {worstSeverity && (
+                    <span
+                      className={styles.riskBadge}
+                      style={{
+                        background:
+                          worstSeverity === 'critical' ? 'rgba(168,85,247,0.25)' :
+                          worstSeverity === 'high' ? 'rgba(239,68,68,0.25)' :
+                          worstSeverity === 'medium' ? 'rgba(245,158,11,0.25)' :
+                          'rgba(34,197,94,0.25)',
+                        color:
+                          worstSeverity === 'critical' ? '#c084fc' :
+                          worstSeverity === 'high' ? '#f87171' :
+                          worstSeverity === 'medium' ? '#fbbf24' :
+                          '#4ade80',
+                      }}
+                    >
+                      {worstSeverity} risk
+                    </span>
+                  )}
+                  {selectedResearch ? (
+                    selectedResearch.findings === 'NO_DATA' ? (
+                      <span className={styles.noData}>No public information found for this company</span>
+                    ) : (
+                      <>
+                        <p className={styles.nodeDetailFindings}>{selectedResearch.findings}</p>
+                        {selectedResearch.sub_components.length > 0 && (
+                          <div className={styles.nodeDetailSubs}>
+                            {selectedResearch.sub_components.slice(0, 4).map((sc, i) => (
+                              <span key={i} className={styles.subChip}>
+                                {sc.component}
+                              </span>
+                            ))}
+                            {selectedResearch.sub_components.length > 4 && (
+                              <span className={styles.subChip}>
+                                +{selectedResearch.sub_components.length - 4}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </>
+                    )
+                  ) : (
+                    <span className={styles.noData}>
+                      {analysisPhase === 'done'
+                        ? 'No public information found for this company'
+                        : 'Run analysis to see company details'}
+                    </span>
+                  )}
+                </div>
+              ) : (
+                <span>{selectedLabel}</span>
+              )}
               <button className={styles.infoBoxClose} onClick={handleDismiss}>✕</button>
             </div>
           )}
@@ -458,6 +551,15 @@ export default function SupplyGlobe({ supplyPoints, headquartersLocation }: Prop
           arcsData={arcsData2D}
           pointsData={pointsData}
           selectedLabel={selectedLabel}
+          nodeDetail={selectedNode ? {
+            name: selectedNode.supplier || selectedNode.name,
+            material: selectedNode.material,
+            country: selectedNode.country,
+            value: selectedNode.value,
+          } : null}
+          nodeResearch={selectedResearch}
+          nodeWorstSeverity={worstSeverity}
+          analysisPhase={analysisPhase}
           onPointClick={handlePointClick2D}
           onArcClick={handleArcClick2D}
           onDismiss={handleDismiss}
@@ -469,6 +571,7 @@ export default function SupplyGlobe({ supplyPoints, headquartersLocation }: Prop
         className={styles.viewToggle}
         onClick={() => {
           setSelectedLabel(null);
+          setSelectedNode(null);
           setIs3D(v => !v);
         }}
       >

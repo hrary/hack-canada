@@ -25,7 +25,7 @@ from ..models.schemas import (
     SubComponent,
 )
 from .backboard import ask_analysis_research, ask_analysis_risk
-from ..services.job_store import save_research
+from ..services.job_store import save_research, save_analysis_result
 
 log = logging.getLogger(__name__)
 
@@ -121,6 +121,9 @@ async def run_analysis_stream(
 
     yield _sse("done", result.model_dump())
 
+    # Cache result so the polling endpoint can return it
+    save_analysis_result(job_id, result)
+
 
 # ── Non-streaming convenience (kept for backward compat) ─────────────
 
@@ -162,6 +165,13 @@ and ideally 5-8.  Think about what goes INTO the finished product:
 
 Only go one level deep — do NOT research sub-sub-components.
 Use web_search for EVERY supplier node to ground your answers in real data.
+
+CRITICAL HONESTY RULE:
+- The "findings" field MUST only contain facts that came from web_search results.
+- Do NOT fabricate or guess information about a company.
+- If web_search returns no useful results for a specific supplier, you MUST set
+  "findings" to exactly the string "NO_DATA" and leave "sub_components" as an
+  empty array for that supplier.  This is far better than making things up.
 
 Return a JSON object:
 {{

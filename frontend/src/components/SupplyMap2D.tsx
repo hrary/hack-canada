@@ -8,6 +8,7 @@ import {
   Graticule,
   useMapContext,
 } from 'react-simple-maps';
+import type { SupplierResearch, AnalysisPhase } from '../types';
 import styles from './SupplyMap2D.module.css';
 
 const GEO_URL = 'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json';
@@ -36,6 +37,15 @@ interface Props {
   arcsData: MapArc[];
   pointsData: MapPoint[];
   selectedLabel: string | null;
+  nodeDetail: {
+    name: string;
+    material: string;
+    country: string;
+    value?: number;
+  } | null;
+  nodeResearch: SupplierResearch | null;
+  nodeWorstSeverity: string | null;
+  analysisPhase: AnalysisPhase;
   onPointClick: (point: MapPoint) => void;
   onArcClick: (arc: MapArc) => void;
   onDismiss: () => void;
@@ -154,6 +164,10 @@ export default function SupplyMap2D({
   arcsData,
   pointsData,
   selectedLabel,
+  nodeDetail,
+  nodeResearch,
+  nodeWorstSeverity,
+  analysisPhase,
   onPointClick,
   onArcClick,
   onDismiss,
@@ -248,7 +262,65 @@ export default function SupplyMap2D({
 
       {selectedLabel && (
         <div className={styles.infoBox}>
-          <span>{selectedLabel}</span>
+          {nodeDetail ? (
+            <div className={styles.nodeDetail}>
+              <strong>{nodeDetail.name}</strong>
+              <span className={styles.nodeDetailRow}>
+                {nodeDetail.material} · {nodeDetail.country}
+                {nodeDetail.value != null && ` · $${nodeDetail.value.toLocaleString()}`}
+              </span>
+              {nodeWorstSeverity && (
+                <span
+                  className={styles.riskBadge}
+                  style={{
+                    background:
+                      nodeWorstSeverity === 'critical' ? 'rgba(168,85,247,0.25)' :
+                      nodeWorstSeverity === 'high' ? 'rgba(239,68,68,0.25)' :
+                      nodeWorstSeverity === 'medium' ? 'rgba(245,158,11,0.25)' :
+                      'rgba(34,197,94,0.25)',
+                    color:
+                      nodeWorstSeverity === 'critical' ? '#c084fc' :
+                      nodeWorstSeverity === 'high' ? '#f87171' :
+                      nodeWorstSeverity === 'medium' ? '#fbbf24' :
+                      '#4ade80',
+                  }}
+                >
+                  {nodeWorstSeverity} risk
+                </span>
+              )}
+              {nodeResearch ? (
+                nodeResearch.findings === 'NO_DATA' ? (
+                  <span className={styles.noData}>No public information found for this company</span>
+                ) : (
+                  <>
+                    <p className={styles.nodeDetailFindings}>{nodeResearch.findings}</p>
+                    {nodeResearch.sub_components.length > 0 && (
+                      <div className={styles.nodeDetailSubs}>
+                        {nodeResearch.sub_components.slice(0, 4).map((sc, i) => (
+                          <span key={i} className={styles.subChip}>
+                            {sc.component}
+                          </span>
+                        ))}
+                        {nodeResearch.sub_components.length > 4 && (
+                          <span className={styles.subChip}>
+                            +{nodeResearch.sub_components.length - 4}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )
+              ) : (
+                <span className={styles.noData}>
+                  {analysisPhase === 'done'
+                    ? 'No public information found for this company'
+                    : 'Run analysis to see company details'}
+                </span>
+              )}
+            </div>
+          ) : (
+            <span>{selectedLabel}</span>
+          )}
           <button
             className={styles.infoBoxClose}
             onClick={(e) => {
