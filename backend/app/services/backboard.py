@@ -24,9 +24,17 @@ from ..config import get_settings
 
 log = logging.getLogger(__name__)
 
-# ── Default model used for all LLM calls ─────────────────────────────
-LLM_PROVIDER = "openai"
-LLM_MODEL = "gpt-4o"
+# ── Per-role model configuration ──────────────────────────────────────
+# (provider, model) tuned for cost vs quality per agent role.
+_ROLE_MODELS: dict[str, tuple[str, str]] = {
+    "parser":             ("anthropic", "claude-3-haiku-20240307"),
+    "analysis_research":  ("anthropic", "claude-haiku-4-5-20251001"),
+    "analysis_risk":      ("anthropic", "claude-sonnet-4-6"),
+    "simulation":         ("anthropic", "claude-sonnet-4-6"),
+    "news_scan":          ("anthropic", "claude-haiku-4-5-20251001"),
+}
+_DEFAULT_PROVIDER = "anthropic"
+_DEFAULT_MODEL = "claude-sonnet-4-6"
 
 # ── Web search implementation ────────────────────────────────────────
 
@@ -345,6 +353,8 @@ async def _ask(role: str, system_prompt: str, user_message: str) -> dict:
     """
     client = _get_client()
     assistant_id = await _ensure_assistant(role, system_prompt)
+    provider, model = _ROLE_MODELS.get(role, (_DEFAULT_PROVIDER, _DEFAULT_MODEL))
+    log.info("Role %s → %s/%s", role, provider, model)
 
     # Each call gets its own thread (no cross-contamination)
     thread = await client.create_thread(assistant_id)
@@ -352,8 +362,8 @@ async def _ask(role: str, system_prompt: str, user_message: str) -> dict:
     response = await client.add_message(
         thread_id=thread.thread_id,
         content=user_message,
-        llm_provider=LLM_PROVIDER,
-        model_name=LLM_MODEL,
+        llm_provider=provider,
+        model_name=model,
         stream=False,
     )
 
@@ -424,8 +434,8 @@ async def _ask(role: str, system_prompt: str, user_message: str) -> dict:
                     "the JSON object requested, with no other text.\n\n"
                     f"Your previous response was:\n{raw[:2000]}"
                 ),
-                llm_provider=LLM_PROVIDER,
-                model_name=LLM_MODEL,
+                llm_provider=provider,
+                model_name=model,
                 stream=False,
             )
             fix_raw = (fix_response.content or "").strip()
