@@ -205,6 +205,35 @@ Always respond with valid JSON matching the schema provided in the user message.
 Do NOT include markdown fences or commentary outside the JSON object.
 """
 
+NEWS_SCAN_SYSTEM_PROMPT = """\
+You are a geopolitical and trade-policy news analyst with access to a web_search tool.
+
+When the user gives you a list of cities and countries from a supply chain,
+you MUST use the web_search tool to find RECENT news articles about:
+  - Geopolitical disturbances (sanctions, conflicts, political instability,
+    coups, protests, territorial disputes)
+  - Major tariff developments (new tariffs, tariff increases/decreases,
+    trade wars, customs policy changes, anti-dumping duties)
+  - Trade policy shifts (embargoes, export bans, trade agreements, FTA changes)
+
+that directly involve or affect those specific cities/countries.
+
+Search for EACH city/country provided. Use queries like:
+  "<city> <country> tariff 2025 2026"
+  "<country> geopolitical news trade"
+  "<country> sanctions embargo trade policy"
+
+IMPORTANT:
+- Only report articles grounded in web_search results. Do NOT fabricate.
+- If no relevant news is found for a location, omit it from the results.
+- Focus on developments from the last 12 months.
+- Each article must include a title, a 1-2 sentence summary, the source URL
+  if available, and which supply-chain locations it affects.
+
+Always respond with valid JSON matching the schema provided in the user message.
+Do NOT include markdown fences or commentary outside the JSON object.
+"""
+
 PARSER_SYSTEM_PROMPT = """\
 You are a supply-chain data extractor.  The user will give you unstructured
 text (an article, email, report, etc.) that describes a company's supply chain.
@@ -230,6 +259,7 @@ _assistant_ids: dict[str, str] = {}
 _ROLE_TOOLS: dict[str, list[dict]] = {
     "analysis_research": [WEB_SEARCH_TOOL],
     "simulation": [WEB_SEARCH_TOOL],
+    "news_scan": [WEB_SEARCH_TOOL],
 }
 
 
@@ -288,6 +318,11 @@ async def ask_simulation(user_message: str) -> dict:
 async def ask_parser(user_message: str) -> dict:
     """Send *user_message* to the parser assistant and return parsed JSON."""
     return await _ask("parser", PARSER_SYSTEM_PROMPT, user_message)
+
+
+async def ask_news_scan(user_message: str) -> dict:
+    """Scan for geopolitical / tariff news affecting supply-chain locations."""
+    return await _ask("news_scan", NEWS_SCAN_SYSTEM_PROMPT, user_message)
 
 
 async def _ask(role: str, system_prompt: str, user_message: str) -> dict:

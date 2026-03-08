@@ -105,6 +105,15 @@ class Alternative(BaseModel):
     estimated_savings: float | None = None  # % savings
 
 
+class NewsArticle(BaseModel):
+    """A news article related to geopolitical/tariff developments."""
+    title: str
+    summary: str
+    url: str = ""
+    affected_locations: list[str] = []
+    relevance: str = ""  # brief note on why it matters to the supply chain
+
+
 class AnalysisResult(BaseModel):
     """Full analysis payload returned to the frontend."""
     job_id: str
@@ -115,6 +124,7 @@ class AnalysisResult(BaseModel):
     supplier_research: list["SupplierResearch"] = []
     summary: str = ""
     tariff_data: dict | None = None
+    news_articles: list[NewsArticle] = []
 
 
 # ── Supplier research (sub-component discovery) ──────────────────────

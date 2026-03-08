@@ -1,4 +1,4 @@
-import type { AnalysisResult, SimulationScenario, SimulationResult, SupplierResearch, RiskFactor, Alternative, SupplyPoint } from '../types';
+import type { AnalysisResult, SimulationScenario, SimulationResult, SupplierResearch, RiskFactor, Alternative, SupplyPoint, NewsArticle } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
 
@@ -176,4 +176,12 @@ export function streamAnalysis(
   })();
 
   return controller;
+}
+
+// ─── News Scan ────────────────────────────────────────────────────────
+
+export async function scanNews(
+  jobId: string,
+): Promise<{ job_id: string; news_articles: NewsArticle[] }> {
+  return postJSON('/analysis/news/' + encodeURIComponent(jobId), {});
 }

@@ -736,3 +736,59 @@
   font-style: italic;
   margin-top: 2px;
 }
+
+/* ── Geopolitical / Tariff News card ──────────────────────────────── */
+.newsItem {
+  padding: 10px 0;
+  border-top: 1px solid var(--border-color);
+}
+
+.newsItem:first-of-type {
+  border-top: none;
+}
+
+.newsTitle {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.3;
+}
+
+.newsTitle a {
+  color: var(--accent-primary, #6366f1);
+  text-decoration: none;
+}
+
+.newsTitle a:hover {
+  text-decoration: underline;
+}
+
+.newsSummary {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  line-height: 1.45;
+  margin: 4px 0 0;
+}
+
+.newsLocations {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.newsRelevance {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-style: italic;
+  margin: 4px 0 0;
+}
+
+.newsHint {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin: 0 0 12px;
+}

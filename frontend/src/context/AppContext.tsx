@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useMemo, type ReactNode } from 'react';
-import type { User, SupplyPoint, AnalysisResult, SimulationResult, PanelMode, SupplierResearch, AnalysisPhase, RiskFactor, Alternative } from '../types';
+import type { User, SupplyPoint, AnalysisResult, SimulationResult, PanelMode, SupplierResearch, AnalysisPhase, RiskFactor, Alternative, NewsArticle } from '../types';
 
 interface AppContextType {
   user: User | null;
@@ -28,6 +28,9 @@ interface AppContextType {
   setStreamedRisks: (r: RiskFactor[]) => void;
   streamedAlternatives: Alternative[];
   setStreamedAlternatives: (a: Alternative[]) => void;
+  // Streamed news articles
+  newsArticles: NewsArticle[];
+  setNewsArticles: (a: NewsArticle[]) => void;
   // Globe focus
   focusLocation: { lat: number; lng: number } | null;
   setFocusLocation: (loc: { lat: number; lng: number } | null) => void;
@@ -54,6 +57,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [supplierResearch, setSupplierResearch] = useState<SupplierResearch[]>([]);
   const [streamedRisks, setStreamedRisks] = useState<RiskFactor[]>([]);
   const [streamedAlternatives, setStreamedAlternatives] = useState<Alternative[]>([]);
+  const [newsArticles, setNewsArticles] = useState<NewsArticle[]>([]);
   const [focusLocation, setFocusLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [simulationResults, setSimulationResults] = useState<SimulationResult[]>([]);
   const [simulationLoading, setSimulationLoading] = useState(false);
@@ -86,6 +90,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       supplierResearch, setSupplierResearch,
       streamedRisks, setStreamedRisks,
       streamedAlternatives, setStreamedAlternatives,
+      newsArticles, setNewsArticles,
       focusLocation, setFocusLocation,
       simulationResults, setSimulationResults,
       simulationLoading, setSimulationLoading,

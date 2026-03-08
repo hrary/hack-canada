@@ -3,9 +3,9 @@
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
-from ..models.schemas import AnalysisResult, JobStatus
+from ..models.schemas import AnalysisResult, JobStatus, NewsArticle
 from ..services.job_store import jobs, analysis_results
-from ..services.analysis import run_analysis, run_analysis_stream
+from ..services.analysis import run_analysis, run_analysis_stream, run_news_scan
 
 router = APIRouter()
 
@@ -63,3 +63,14 @@ async def get_analysis_result(job_id: str):
         supply_chain=chain,
         summary="Analysis not yet started.",
     )
+
+
+@router.post("/news/{job_id}")
+async def scan_news(job_id: str):
+    """Scan for geopolitical / tariff news affecting the supply chain."""
+    chain = jobs.get(job_id)
+    if chain is None:
+        raise HTTPException(status_code=404, detail="Job not found – upload first.")
+
+    articles = await run_news_scan(chain)
+    return {"job_id": job_id, "news_articles": [a.model_dump() for a in articles]}

@@ -23,8 +23,9 @@ from ..models.schemas import (
     SupplyChainData,
     SupplierResearch,
     SubComponent,
+    NewsArticle,
 )
-from .backboard import ask_analysis_research, ask_analysis_risk
+from .backboard import ask_analysis_research, ask_analysis_risk, ask_news_scan
 from ..services.job_store import save_research, save_analysis_result
 from ..services.tariff_lookup import calculate_net_tariff
 
@@ -251,6 +252,47 @@ Return a JSON object:
     return await ask_analysis_risk(prompt)
 
 
+async def _run_news_phase(chain: SupplyChainData) -> dict:
+    """Use web_search to find geopolitical / tariff news for supply-chain locations."""
+    # Deduplicate locations
+    locations: list[str] = []
+    seen: set[str] = set()
+    for n in chain.nodes:
+        parts = [n.name, n.country]
+        key = f"{n.name}|{n.country}".lower()
+        if key not in seen and n.country:
+            seen.add(key)
+            locations.append(f"  - {n.name} ({n.country})")
+
+    prompt = f"""\
+Search for recent news articles about geopolitical disturbances or major tariff
+developments that involve or affect the following supply-chain locations:
+
+{chr(10).join(locations)}
+
+INSTRUCTIONS:
+- Use web_search for each location/country to find relevant news.
+- Focus on: tariff changes, trade wars, sanctions, embargoes, political
+  instability, conflicts, trade policy shifts, customs changes.
+- Only include articles grounded in actual web_search results.
+- If nothing relevant is found for a location, omit it.
+
+Return a JSON object:
+{{
+  "news_articles": [
+    {{
+      "title": "<article headline>",
+      "summary": "<1-2 sentence summary of the development>",
+      "url": "<source URL if available, else empty string>",
+      "affected_locations": ["<city or country name>", ...],
+      "relevance": "<brief note on why this matters to the supply chain>"
+    }}
+  ]
+}}
+"""
+    return await ask_news_scan(prompt)
+
+
 # ── Parsers ──────────────────────────────────────────────────────────
 
 
@@ -313,6 +355,31 @@ def _parse_alternatives(data: dict) -> list[Alternative]:
         except (KeyError, ValueError, TypeError):
             continue
     return alts
+
+
+def _parse_news(data: dict) -> list[NewsArticle]:
+    articles: list[NewsArticle] = []
+    for a in data.get("news_articles", []):
+        try:
+            articles.append(NewsArticle(
+                title=a.get("title", ""),
+                summary=a.get("summary", ""),
+                url=a.get("url", ""),
+                affected_locations=a.get("affected_locations", []),
+                relevance=a.get("relevance", ""),
+            ))
+        except (KeyError, ValueError, TypeError):
+            continue
+    return articles
+
+
+# ── Standalone news scan (called from its own endpoint) ──────────────
+
+
+async def run_news_scan(chain: SupplyChainData) -> list[NewsArticle]:
+    """Public helper: scan for geopolitical/tariff news for the supply chain."""
+    raw = await _run_news_phase(chain)
+    return _parse_news(raw)
 
 
 # ── SSE formatter ────────────────────────────────────────────────────

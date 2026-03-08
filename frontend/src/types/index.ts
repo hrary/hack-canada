@@ -54,6 +54,7 @@ export interface AnalysisResult {
   supplier_research: SupplierResearch[];
   summary: string;
   tariff_data?: TariffData | null;
+  news_articles?: NewsArticle[];
 }
 
 // ── Tariff types ─────────────────────────────────────────────────────
@@ -131,4 +132,12 @@ export interface SimulationResult {
   summary: string;
 }
 
-export type PanelMode = 'upload' | 'analysis' | 'simulation';
+export type PanelMode = 'upload' | 'analysis' | 'simulation' | 'news';
+
+export interface NewsArticle {
+  title: string;
+  summary: string;
+  url: string;
+  affected_locations: string[];
+  relevance: string;
+}

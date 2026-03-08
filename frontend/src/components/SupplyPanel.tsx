@@ -5,7 +5,7 @@ import {
   CheckCircle, AlertCircle, Loader2, BarChart3, FlaskConical,
   ArrowLeft, AlertTriangle, Lightbulb, Play, Send, Search,
   ShieldAlert, TrendingUp, TrendingDown, Zap, DollarSign, Download,
-  ChevronDown, ChevronUp, Percent,
+  ChevronDown, ChevronUp, Percent, Newspaper,
 } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import {
@@ -13,8 +13,9 @@ import {
   getJobChain,
   streamAnalysis,
   runSimulation,
+  scanNews,
 } from '../api/supplyChain';
-import type { SupplyPoint, PanelMode, SimulationScenario } from '../types';
+import type { SupplyPoint, PanelMode, SimulationScenario, NewsArticle } from '../types';
 import styles from './SupplyPanel.module.css';
 
 function parseCSV(text: string): SupplyPoint[] {
@@ -75,6 +76,7 @@ export default function SupplyPanel() {
     supplierResearch, setSupplierResearch,
     streamedRisks, setStreamedRisks,
     streamedAlternatives, setStreamedAlternatives,
+    newsArticles, setNewsArticles,
     setFocusLocation,
     simulationResults, setSimulationResults,
     simulationLoading, setSimulationLoading,
@@ -97,6 +99,9 @@ export default function SupplyPanel() {
 
   // Tariff breakdown toggle
   const [tariffOpen, setTariffOpen] = useState(false);
+
+  // News scanning state
+  const [newsLoading, setNewsLoading] = useState(false);
 
   const handleSetHQ = () => {
     const lat = parseFloat(hqLat);
@@ -263,6 +268,20 @@ export default function SupplyPanel() {
   // Simulation scenario input
   const [scenarioText, setScenarioText] = useState('');
 
+  const handleScanNews = async () => {
+    if (!currentJobId) return;
+    setNewsLoading(true);
+    setNewsArticles([]);
+    try {
+      const resp = await scanNews(currentJobId);
+      setNewsArticles(resp.news_articles ?? []);
+    } catch {
+      setNewsArticles([]);
+    } finally {
+      setNewsLoading(false);
+    }
+  };
+
   const handleExportJSON = () => {
     const payload = {
       supply_chain: supplyPoints,
@@ -303,6 +322,7 @@ export default function SupplyPanel() {
   const modeTabs: { key: PanelMode; label: string; icon: React.ReactNode }[] = [
     { key: 'analysis', label: 'Analysis', icon: <BarChart3 size={14} /> },
     { key: 'simulation', label: 'Simulation', icon: <FlaskConical size={14} /> },
+    { key: 'news', label: 'News', icon: <Newspaper size={14} /> },
   ];
 
   // ── Upload view ─────────────────────────────────────────────────────
@@ -478,6 +498,8 @@ export default function SupplyPanel() {
             onClick={() => {
               // Clear simulation overlay when leaving simulation tab
               if (mt.key !== 'simulation') setSimulationResults([]);
+              // Clear news when leaving news tab
+              if (mt.key !== 'news') setNewsArticles([]);
               setPanelMode(mt.key);
             }}
           >
@@ -802,6 +824,80 @@ export default function SupplyPanel() {
                 <div className={styles.emptyState}>
                   <FlaskConical size={32} />
                   <p>Enter a scenario above to see how it would affect your supply chain.</p>
+                </div>
+              )}
+            </motion.div>
+          )}
+
+          {/* ── News tab ──────────────────────────────────── */}
+          {panelMode === 'news' && (
+            <motion.div
+              key="news"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.2 }}
+              className={styles.tabPanel}
+            >
+              <div className={styles.sectionLabel}>
+                <Newspaper size={14} /> Geopolitical &amp; Tariff News
+              </div>
+              <p className={styles.newsHint}>
+                Scan for recent news about geopolitical disturbances, tariff changes,
+                and trade policy shifts affecting your supply chain locations.
+              </p>
+
+              <button
+                className={`${styles.analysisBtn} ${(!currentJobId || newsLoading) ? styles.analysisBtnDisabled : ''}`}
+                onClick={handleScanNews}
+                disabled={!currentJobId || newsLoading}
+              >
+                {newsLoading ? (
+                  <><Loader2 size={14} className={styles.spinner} /> Scanning for news…</>
+                ) : (
+                  <><Search size={14} /> {newsArticles.length > 0 ? 'Re-scan News' : 'Scan for News'}</>
+                )}
+              </button>
+
+              {newsArticles.length > 0 && (
+                <div className={styles.resultCard}>
+                  <div className={styles.resultCardTitle}>
+                    <Newspaper size={14} /> Articles Found ({newsArticles.length})
+                  </div>
+                  {newsArticles.map((article: NewsArticle, i: number) => (
+                    <div key={i} className={styles.newsItem}>
+                      <div className={styles.newsTitle}>
+                        {article.url ? (
+                          <a href={article.url} target="_blank" rel="noopener noreferrer">{article.title}</a>
+                        ) : (
+                          article.title
+                        )}
+                      </div>
+                      <p className={styles.newsSummary}>{article.summary}</p>
+                      {article.affected_locations.length > 0 && (
+                        <div className={styles.newsLocations}>
+                          <MapPin size={10} />
+                          {article.affected_locations.join(', ')}
+                        </div>
+                      )}
+                      {article.relevance && (
+                        <p className={styles.newsRelevance}>{article.relevance}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {!newsLoading && newsArticles.length === 0 && currentJobId && (
+                <div className={styles.emptyState}>
+                  <Newspaper size={32} />
+                  <p>Press the button above to scan for news affecting your supply chain.</p>
+                </div>
+              )}
+
+              {!currentJobId && (
+                <div className={styles.simHint}>
+                  Upload your supply chain first to enable news scanning.
                 </div>
               )}
             </motion.div>
