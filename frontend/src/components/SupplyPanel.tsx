@@ -1,15 +1,16 @@
 import { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Upload, FileText, Image, Type, MapPin, Package,
+  Upload, FileText, Type, MapPin, Package,
   CheckCircle, AlertCircle, Loader2, BarChart3, FlaskConical,
   ArrowLeft, AlertTriangle, Lightbulb, Play, Send, Search,
   ShieldAlert, TrendingUp, TrendingDown, Zap, DollarSign, Download,
+  ChevronDown, ChevronUp, Percent,
 } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import {
   uploadSupplyChainText,
-  uploadSupplyChainImage,
+  getJobChain,
   streamAnalysis,
   runSimulation,
 } from '../api/supplyChain';
@@ -27,25 +28,31 @@ function parseCSV(text: string): SupplyPoint[] {
       const idx = headers.indexOf(key);
       return idx >= 0 ? vals[idx] : '';
     };
-    const lat = parseFloat(get('lat') || get('latitude'));
-    const lng = parseFloat(get('lng') || get('longitude') || get('lon'));
-    if (isNaN(lat) || isNaN(lng)) continue;
+    const lat = parseFloat(get('lat') || get('latitude') || '0');
+    const lng = parseFloat(get('lng') || get('longitude') || get('lon') || '0');
     const rawVal = get('value') || get('amount');
     const value = rawVal ? parseFloat(rawVal) : undefined;
+    const name = get('name') || get('supplier') || `Point ${i}`;
+    const supplier = get('supplier');
+    const material = get('material');
+    const country = get('country');
+    // Skip completely empty rows
+    if (!name && !supplier && !material) continue;
     points.push({
       id: crypto.randomUUID(),
-      name: get('name') || `Point ${i}`,
-      lat, lng,
-      material: get('material') || '',
-      supplier: get('supplier') || '',
-      country: get('country') || '',
+      name,
+      lat: isNaN(lat) ? 0 : lat,
+      lng: isNaN(lng) ? 0 : lng,
+      material: material || '',
+      supplier: supplier || '',
+      country: country || '',
       value: isNaN(value as number) ? undefined : value,
     });
   }
   return points;
 }
 
-type UploadTab = 'csv' | 'text' | 'image';
+type UploadTab = 'csv' | 'text';
 type UploadStatus = 'idle' | 'uploading' | 'success' | 'error';
 
 const SAMPLE_CSV = `name,lat,lng,material,supplier,country,value
@@ -88,10 +95,8 @@ export default function SupplyPanel() {
   // Text state
   const [textContent, setTextContent] = useState('');
 
-  // Image state
-  const [imageFile, setImageFile] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState('');
-  const imageInputRef = useRef<HTMLInputElement>(null);
+  // Tariff breakdown toggle
+  const [tariffOpen, setTariffOpen] = useState(false);
 
   const handleSetHQ = () => {
     const lat = parseFloat(hqLat);
@@ -126,23 +131,11 @@ export default function SupplyPanel() {
     e.target.value = '';
   };
 
-  const handleImageFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setImageFile(file);
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      setImagePreview(evt.target?.result as string);
-    };
-    reader.readAsDataURL(file);
-    e.target.value = '';
-  };
-
   const handleSubmit = async () => {
     setUploadStatus('uploading');
     setStatusMessage('');
 
-    // For CSV, parse and display on globe immediately
+    // For CSV, parse and display on globe immediately (points with coords)
     if (activeTab === 'csv') {
       if (!csvContent.trim()) {
         setUploadStatus('error');
@@ -150,47 +143,55 @@ export default function SupplyPanel() {
         return;
       }
       const parsed = parseCSV(csvContent);
-      if (parsed.length > 0) {
-        setSupplyPoints(parsed);
+      const withCoords = parsed.filter(p => p.lat !== 0 || p.lng !== 0);
+      if (withCoords.length > 0) {
+        setSupplyPoints(withCoords);
       }
     }
 
     // Fire API and capture jobId
     try {
-      if (activeTab === 'image') {
-        if (!imageFile) {
-          setUploadStatus('error');
-          setStatusMessage('Please select an image first.');
-          return;
-        }
-        const resp = await uploadSupplyChainImage(imageFile);
-        setCurrentJobId(resp.job_id ?? null);
-        setUploadStatus('success');
-        setStatusMessage('Image uploaded. Processing will begin shortly.');
-        setImageFile(null);
-        setImagePreview('');
-      } else {
-        const content = activeTab === 'csv' ? csvContent : textContent;
-        if (!content.trim()) {
-          setUploadStatus('error');
-          setStatusMessage('Please provide content to upload.');
-          return;
-        }
-        const resp = await uploadSupplyChainText({
-          format: activeTab,
-          content,
-          fileName: activeTab === 'csv' ? csvFileName : undefined,
-        });
-        setCurrentJobId(resp.job_id ?? null);
-        setUploadStatus('success');
-        setStatusMessage(
-          activeTab === 'csv'
-            ? `Mapped ${parseCSV(csvContent).length} suppliers on the globe.`
-            : 'Text uploaded. Processing will begin shortly.'
-        );
-        if (activeTab === 'csv') { setCsvContent(''); setCsvFileName(''); }
-        else { setTextContent(''); }
+      const content = activeTab === 'csv' ? csvContent : textContent;
+      if (!content.trim()) {
+        setUploadStatus('error');
+        setStatusMessage('Please provide content to upload.');
+        return;
       }
+      const resp = await uploadSupplyChainText({
+        format: activeTab,
+        content,
+        fileName: activeTab === 'csv' ? csvFileName : undefined,
+      });
+      const jobId = resp.job_id ?? null;
+      setCurrentJobId(jobId);
+
+      // Fetch backend-parsed chain (includes LLM-geocoded coords)
+      if (jobId) {
+        try {
+          const chain = await getJobChain(jobId);
+          if (chain.nodes?.length) {
+            setSupplyPoints(chain.nodes.map((n: any) => ({
+              id: n.id,
+              name: n.name,
+              lat: n.lat,
+              lng: n.lng,
+              material: n.material || '',
+              supplier: n.supplier || '',
+              country: n.country || '',
+              value: n.value || undefined,
+            })));
+          }
+        } catch { /* fall back to local parsing */ }
+      }
+
+      setUploadStatus('success');
+      setStatusMessage(
+        activeTab === 'csv'
+          ? `Mapped ${parseCSV(csvContent).length} suppliers on the globe.`
+          : 'Text uploaded and processed.'
+      );
+      if (activeTab === 'csv') { setCsvContent(''); setCsvFileName(''); }
+      else { setTextContent(''); }
 
       // Switch to analysis mode after successful upload
       setPanelMode('analysis');
@@ -297,7 +298,6 @@ export default function SupplyPanel() {
   const tabs: { key: UploadTab; label: string; icon: React.ReactNode }[] = [
     { key: 'csv', label: 'CSV', icon: <FileText size={14} /> },
     { key: 'text', label: 'Text', icon: <Type size={14} /> },
-    { key: 'image', label: 'Image', icon: <Image size={14} /> },
   ];
 
   const modeTabs: { key: PanelMode; label: string; icon: React.ReactNode }[] = [
@@ -382,7 +382,7 @@ export default function SupplyPanel() {
                   ) : (
                     <>
                       <span>Click to upload CSV</span>
-                      <span className={styles.dropZoneHint}>name, lat, lng, material, supplier, country</span>
+                      <span className={styles.dropZoneHint}>name, material, supplier, country (lat/lng optional)</span>
                     </>
                   )}
                   <input
@@ -421,45 +421,6 @@ export default function SupplyPanel() {
                   rows={10}
                   placeholder={"Paste your supply chain information here...\n\nExample:\nOur semiconductors are sourced from Foxconn in Shenzhen, China.\nSteel alloys come from Gerdau SA in São Paulo, Brazil.\nPrecision parts are manufactured by Bosch GmbH in Stuttgart, Germany."}
                 />
-              </motion.div>
-            )}
-
-            {activeTab === 'image' && (
-              <motion.div
-                key="image"
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.2 }}
-                className={styles.tabPanel}
-              >
-                <label
-                  className={styles.dropZone}
-                  onClick={() => imageInputRef.current?.click()}
-                >
-                  {imagePreview ? (
-                    <img src={imagePreview} alt="Preview" className={styles.imagePreview} />
-                  ) : (
-                    <>
-                      <Image size={28} />
-                      <span>Click to upload an image</span>
-                      <span className={styles.dropZoneHint}>Invoices, documents, supply maps, etc.</span>
-                    </>
-                  )}
-                  <input
-                    ref={imageInputRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={handleImageFile}
-                    hidden
-                  />
-                </label>
-                {imageFile && (
-                  <div className={styles.fileInfo}>
-                    <span>{imageFile.name}</span>
-                    <span className={styles.fileSize}>{(imageFile.size / 1024).toFixed(1)} KB</span>
-                  </div>
-                )}
               </motion.div>
             )}
           </AnimatePresence>
@@ -549,6 +510,61 @@ export default function SupplyPanel() {
                         ? 'Scoring risks & alternatives…'
                         : 'Running analysis…'}
                   </span>
+                </div>
+              )}
+
+              {/* Tariff impact banner */}
+              {analysisResult?.tariff_data && (
+                <div className={styles.tariffBanner}>
+                  <div
+                    className={styles.tariffBannerHeader}
+                    onClick={() => setTariffOpen(o => !o)}
+                  >
+                    <div className={styles.tariffBannerLeft}>
+                      <Percent size={18} />
+                      <span className={styles.tariffPct}>
+                        {analysisResult.tariff_data.net_tariff_pct.toFixed(1)}%
+                      </span>
+                      <span className={styles.tariffLabel}>Est. Tariff Impact</span>
+                    </div>
+                    {tariffOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                  </div>
+
+                  <AnimatePresence>
+                    {tariffOpen && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className={styles.tariffBreakdown}
+                      >
+                        <p className={styles.tariffSummary}>{analysisResult.tariff_data.summary}</p>
+                        <div className={styles.tariffList}>
+                          {[...analysisResult.tariff_data.nodes]
+                            .sort((a, b) => b.applied_rate - a.applied_rate)
+                            .map((node, i) => (
+                              <div key={i} className={styles.tariffRow}>
+                                <div className={styles.tariffRowMain}>
+                                  <span className={styles.tariffNodeName}>{node.name}</span>
+                                  <span className={styles.tariffRate}>
+                                    {(node.applied_rate * 100).toFixed(1)}%
+                                  </span>
+                                </div>
+                                <div className={styles.tariffRowMeta}>
+                                  {node.country} · {node.material || 'N/A'}
+                                  {node.hs_code && <> · HS {node.hs_code}</>}
+                                  {node.rate_type && <> · <em>{node.rate_type}</em></>}
+                                </div>
+                                {node.notes && (
+                                  <div className={styles.tariffRowNotes}>{node.notes}</div>
+                                )}
+                              </div>
+                            ))}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
               )}
 

@@ -311,8 +311,8 @@ async def _ask(role: str, system_prompt: str, user_message: str) -> dict:
         stream=False,
     )
 
-    # ── Tool-call loop (max 15 rounds to prevent infinite cycles) ────
-    MAX_TOOL_ROUNDS = 15
+    # ── Tool-call loop (max 50 rounds to support large supply chains) ────
+    MAX_TOOL_ROUNDS = 50
     for _round in range(MAX_TOOL_ROUNDS):
         if not (
             getattr(response, "status", None) == "REQUIRES_ACTION"

@@ -26,6 +26,7 @@ from ..models.schemas import (
 )
 from .backboard import ask_analysis_research, ask_analysis_risk
 from ..services.job_store import save_research, save_analysis_result
+from ..services.tariff_lookup import calculate_net_tariff
 
 log = logging.getLogger(__name__)
 
@@ -102,6 +103,13 @@ async def run_analysis_stream(
             f"Found {len(risks)} risk(s) and {len(alternatives)} alternative(s)."
         )
 
+    # ── Phase 3: Tariff calculation ────────────────────────────────
+    tariff_data = None
+    try:
+        tariff_data = calculate_net_tariff(chain)
+    except Exception:
+        log.exception("Tariff calculation failed")
+
     result = AnalysisResult(
         job_id=job_id,
         status=JobStatus.complete,
@@ -110,6 +118,7 @@ async def run_analysis_stream(
         alternatives=alternatives,
         supplier_research=research,
         summary=summary,
+        tariff_data=tariff_data,
     )
 
     yield _sse("risk", {

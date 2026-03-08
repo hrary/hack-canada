@@ -53,6 +53,32 @@ export interface AnalysisResult {
   alternatives: Alternative[];
   supplier_research: SupplierResearch[];
   summary: string;
+  tariff_data?: TariffData | null;
+}
+
+// ── Tariff types ─────────────────────────────────────────────────────
+
+export interface TariffNodeBreakdown {
+  node_id: string;
+  name: string;
+  country: string;
+  material: string;
+  hs_code: string | null;
+  description?: string;
+  value: number;
+  mfn_rate: number | null;
+  applied_rate: number | null;
+  tariff_cost: number;
+  rate_type: string;
+  notes: string;
+}
+
+export interface TariffData {
+  nodes: TariffNodeBreakdown[];
+  total_goods_value: number;
+  total_tariff_cost: number;
+  net_tariff_pct: number;
+  summary: string;
 }
 
 // ── Supplier research (sub-component discovery) ──────────────────────

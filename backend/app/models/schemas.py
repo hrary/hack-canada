@@ -14,6 +14,19 @@ class UploadFormat(str, Enum):
     text = "text"
 
 
+# ── Tariff info ───────────────────────────────────────────────────────
+
+class TariffInfo(BaseModel):
+    hs_code: str
+    description: str = ""
+    mfn_rate: float = 0.0
+    applied_rate: float = 0.0
+    cusma_eligible: bool = False
+    cusma_rate: float = 0.0
+    country_override: bool = False
+    notes: str = ""
+
+
 class JobStatus(str, Enum):
     pending = "pending"
     parsing = "parsing"
@@ -41,12 +54,13 @@ class SupplyNode(BaseModel):
     """A single node in the supply chain (supplier / material source)."""
     id: str = Field(default_factory=lambda: uuid4().hex[:12])
     name: str
-    lat: float
-    lng: float
+    lat: float = 0.0
+    lng: float = 0.0
     material: str = ""
     supplier: str = ""
     country: str = ""
     value: float = 0.0  # estimated monetary value (USD) of this supply link
+    hs_code: str | None = None
 
 
 class SupplyChainData(BaseModel):
@@ -100,6 +114,7 @@ class AnalysisResult(BaseModel):
     alternatives: list[Alternative] = []
     supplier_research: list["SupplierResearch"] = []
     summary: str = ""
+    tariff_data: dict | None = None
 
 
 # ── Supplier research (sub-component discovery) ──────────────────────
