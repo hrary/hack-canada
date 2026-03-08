@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Globe, ArrowRight, Shield, Zap, BarChart3, ChevronRight } from 'lucide-react';
+import { ArrowRight, Shield, Zap, BarChart3, ChevronRight } from 'lucide-react';
 import styles from './HomePage.module.css';
 
 const fadeUp = {
@@ -24,7 +24,7 @@ export default function HomePage() {
       <nav className={styles.nav}>
         <div className={styles.navInner}>
           <Link to="/" className={styles.logo}>
-            <Globe size={28} />
+            <img src="/provenance_trans.png" alt="Provenance" width={28} height={28} />
             <span>Provenance</span>
           </Link>
           <div className={styles.navLinks}>
@@ -76,7 +76,7 @@ export default function HomePage() {
           <div className={styles.globePreview}>
             <div className={styles.globeRing} />
             <div className={styles.globeRing2} />
-            <Globe size={120} strokeWidth={0.8} className={styles.globeIcon} />
+            <img src="/provenance_trans.png" alt="Provenance" width={120} height={120} className={styles.globeIcon} />
           </div>
         </motion.div>
       </section>
@@ -91,7 +91,7 @@ export default function HomePage() {
           variants={{ visible: { transition: { staggerChildren: 0.1 } } }}
         >
           {[
-            { icon: <Globe size={24} />, title: 'Interactive 3D Globe', desc: 'Visualize your entire supply network on a stunning interactive globe with real-time data mapping.' },
+            { icon: <img src="/provenance_trans.png" alt="Provenance" width={24} height={24} />, title: 'Interactive 3D Globe', desc: 'Visualize your entire supply network on a stunning interactive globe with real-time data mapping.' },
             { icon: <Shield size={24} />, title: 'Risk Assessment', desc: 'Identify potential vulnerabilities and single points of failure across your supply chain.' },
             { icon: <BarChart3 size={24} />, title: 'Analytics Dashboard', desc: 'Comprehensive insights and analytics to optimize your sourcing and logistics decisions.' },
           ].map((feature, i) => (
@@ -108,7 +108,7 @@ export default function HomePage() {
       <footer className={styles.footer}>
         <div className={styles.footerInner}>
           <div className={styles.footerBrand}>
-            <Globe size={20} />
+            <img src="/provenance_trans.png" alt="Provenance" width={20} height={20} />
             <span>Provenance</span>
           </div>
           <p>&copy; 2026 Provenance. All rights reserved.</p>

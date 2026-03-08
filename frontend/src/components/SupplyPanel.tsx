@@ -186,6 +186,16 @@ export default function SupplyPanel() {
               value: n.value || undefined,
             })));
           }
+          // Set HQ from backend response, or fall back to user input fields
+          if (chain.headquarters) {
+            setHeadquartersLocation({ lat: chain.headquarters.lat, lng: chain.headquarters.lng });
+          } else if (!headquartersLocation) {
+            const lat = parseFloat(hqLat);
+            const lng = parseFloat(hqLng);
+            if (!isNaN(lat) && !isNaN(lng)) {
+              setHeadquartersLocation({ lat, lng });
+            }
+          }
         } catch { /* fall back to local parsing */ }
       }
 

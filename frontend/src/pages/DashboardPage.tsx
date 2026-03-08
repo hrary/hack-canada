@@ -1,5 +1,5 @@
 import { Link, useNavigate } from 'react-router-dom';
-import { Globe, LogOut, User } from 'lucide-react';
+import { LogOut, User } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import SupplyGlobe from '../components/SupplyGlobe';
 import SupplyPanel from '../components/SupplyPanel';
@@ -19,7 +19,7 @@ export default function DashboardPage() {
       {/* Top bar */}
       <header className={styles.topBar}>
         <Link to="/" className={styles.logo}>
-          <Globe size={22} />
+          <img src="/provenance_trans.png" alt="Provenance" width={22} height={22} />
           <span>Provenance</span>
         </Link>
         <div className={styles.topRight}>

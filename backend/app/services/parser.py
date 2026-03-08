@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import csv
 import io
 import json
@@ -12,6 +13,9 @@ from ..models.schemas import SupplyChainData, SupplyNode, UploadFormat
 from .backboard import ask_parser
 
 log = logging.getLogger(__name__)
+
+# Maximum seconds to wait for a single LLM parse / geocode call
+_LLM_TIMEOUT = 90
 
 
 def parse_supply_chain_text(
@@ -32,7 +36,7 @@ async def parse_supply_chain_text_async(
     fmt: UploadFormat,
 ) -> SupplyChainData:
     """Async version – preferred when called from async FastAPI routes."""
-    if fmt == UploadFormat.csv:
+    if fmt == UploadFormat.csv or _looks_like_csv(content):
         chain = _parse_csv(content)
         # If any nodes lack coordinates, use LLM to infer them
         missing = [n for n in chain.nodes if n.lat == 0.0 and n.lng == 0.0]
@@ -61,7 +65,8 @@ Return a JSON object with this shape:
       "lng": <longitude>,
       "material": "<material or component>",
       "supplier": "<supplier company name>",
-      "country": "<country>"
+      "country": "<country>",
+      "value": <estimated monetary value in USD, or 0 if unknown>
     }}
   ]
 }}
@@ -72,13 +77,20 @@ or the company's known headquarters / factory location, or the centre of
 the country as a last resort.
 """
     try:
-        data = await ask_parser(prompt)
+        data = await asyncio.wait_for(ask_parser(prompt), timeout=_LLM_TIMEOUT)
+    except asyncio.TimeoutError:
+        log.error("Backboard parser timed out after %ss", _LLM_TIMEOUT)
+        return SupplyChainData(nodes=[])
     except Exception:
         log.exception("Backboard parser call failed – returning empty chain")
         return SupplyChainData(nodes=[])
 
     nodes: list[SupplyNode] = []
     for n in data.get("nodes", []):
+        try:
+            value = float(n.get("value", 0) or 0)
+        except (ValueError, TypeError):
+            value = 0.0
         try:
             nodes.append(
                 SupplyNode(
@@ -89,6 +101,7 @@ the country as a last resort.
                     material=n.get("material", ""),
                     supplier=n.get("supplier", ""),
                     country=n.get("country", ""),
+                    value=value,
                 )
             )
         except (KeyError, ValueError, TypeError):
@@ -103,18 +116,81 @@ def _sync_parse_freetext(content: str) -> SupplyChainData:
     return asyncio.run(_parse_freetext(content))
 
 
+# ── CSV helpers ───────────────────────────────────────────────────────
+
+_COORD_HEADERS = {'lat', 'lng', 'lon', 'latitude', 'longitude'}
+_CSV_KEYWORDS = {'name', 'supplier', 'material', 'country', 'value', 'amount'}
+
+
+def _looks_like_csv(content: str) -> bool:
+    """Heuristic: does *content* look like comma-separated tabular data?"""
+    lines = content.strip().split('\n')
+    if len(lines) < 2:
+        return False
+    first = lines[0].strip().lower()
+    if ',' not in first:
+        return False
+    headers = {h.strip() for h in first.split(',')}
+    return len(headers & (_CSV_KEYWORDS | _COORD_HEADERS)) >= 2
+
+
+def _fix_csv_columns(content: str) -> str:
+    """If the header has lat/lng columns but data rows have fewer columns,
+    drop those columns from the header so DictReader aligns correctly."""
+    lines = content.strip().split('\n')
+    if len(lines) < 2:
+        return content
+
+    raw_headers = [h.strip() for h in lines[0].split(',')]
+    norm_headers = [h.lower() for h in raw_headers]
+
+    coord_cols = [i for i, h in enumerate(norm_headers) if h in _COORD_HEADERS]
+    if not coord_cols:
+        return content  # no coord columns, nothing to fix
+
+    # Count data columns in the first non-empty data row
+    first_data = None
+    for line in lines[1:]:
+        if line.strip():
+            first_data = line
+            break
+    if first_data is None:
+        return content
+
+    data_col_count = len(first_data.split(','))
+    header_col_count = len(raw_headers)
+
+    if data_col_count >= header_col_count:
+        return content  # columns already match, no fix needed
+
+    # Check if removing coord columns makes it match
+    kept = [h for i, h in enumerate(raw_headers) if i not in coord_cols]
+    if len(kept) == data_col_count:
+        new_header = ','.join(kept)
+        return new_header + '\n' + '\n'.join(lines[1:])
+
+    return content  # can't auto-fix, return as-is
+
 def _parse_csv(content: str) -> SupplyChainData:
     """Parse CSV content into SupplyChainData.
 
     Coordinates (lat/lng) are optional — rows without them are still
     accepted and will be geocoded later by the LLM.
+
+    Handles the common case where the header includes lat/lng columns
+    but data rows omit those values (fewer columns than the header).
     """
+    content = _fix_csv_columns(content)
     reader = csv.DictReader(io.StringIO(content))
     nodes: list[SupplyNode] = []
 
     for row in reader:
-        # Normalise keys to lowercase
-        row = {k.strip().lower(): v.strip() for k, v in row.items()}
+        # Normalise keys to lowercase; handle None from short/long rows
+        row = {
+            k.strip().lower(): (v.strip() if v else '')
+            for k, v in row.items()
+            if k is not None
+        }
 
         # Try to extract coordinates (optional)
         try:
@@ -196,7 +272,9 @@ Return a JSON object:
 }}
 """
     try:
-        data = await ask_parser(prompt)
+        data = await asyncio.wait_for(
+            ask_parser(prompt), timeout=_LLM_TIMEOUT
+        )
         loc_map = {
             loc["id"]: (float(loc["lat"]), float(loc["lng"]))
             for loc in data.get("locations", [])
@@ -205,6 +283,8 @@ Return a JSON object:
         for n in chain.nodes:
             if n.id in loc_map:
                 n.lat, n.lng = loc_map[n.id]
+    except asyncio.TimeoutError:
+        log.error("Geocoding LLM call timed out after %ss", _LLM_TIMEOUT)
     except Exception:
         log.exception("Geocoding via LLM failed – nodes will have 0,0 coords")
 

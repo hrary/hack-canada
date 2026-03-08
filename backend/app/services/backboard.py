@@ -145,6 +145,17 @@ Using this research, perform:
    • Logistics fragility (port bottlenecks, distance)
    Rate severity as low / medium / high / critical.
 
+   **Severity calibration – IMPORTANT:**
+   • Active or imminent tariff threats (e.g. proposed/enacted US tariffs on
+     imports from a country) are HIGH or CRITICAL severity because they have
+     direct, quantifiable cost impact on the supply chain.
+   • A company merely being *headquartered* in a country (e.g. the US) is NOT
+     itself a risk unless there is a concrete threat to that location (sanctions,
+     export controls, natural-disaster exposure, etc.).  Do not inflate severity
+     just because a node is located in a major economy.
+   • Prioritise risks that affect cost, lead-time, or availability over
+     abstract geographic concerns.
+
 2. **Alternative Sourcing** – For every medium+ risk, suggest at least one
    alternative supplier or country with estimated savings.
 
