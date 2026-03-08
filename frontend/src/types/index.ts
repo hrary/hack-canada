@@ -86,12 +86,22 @@ export interface NodeImpact {
   node_id: string;
   impact_description: string;
   cost_change_pct: number;
+  severity: string;  // low | medium | high | critical
+}
+
+export interface Recommendation {
+  title: string;
+  description: string;
+  priority: string;  // high | medium | low
+  type: string;      // mitigate | opportunity
 }
 
 export interface SimulationResult {
   job_id: string;
   scenario: SimulationScenario;
   impacts: NodeImpact[];
+  recommendations: Recommendation[];
+  total_cost_impact_pct: number;
   summary: string;
 }
 

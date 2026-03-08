@@ -4,6 +4,7 @@ import {
   Upload, FileText, Image, Type, MapPin, Package,
   CheckCircle, AlertCircle, Loader2, BarChart3, FlaskConical,
   ArrowLeft, AlertTriangle, Lightbulb, Play, Send, Search,
+  ShieldAlert, TrendingUp, TrendingDown, Zap, DollarSign,
 } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import {
@@ -214,6 +215,7 @@ export default function SupplyPanel() {
     setSupplierResearch([]);
     setStreamedRisks([]);
     setStreamedAlternatives([]);
+    setSimulationResults([]); // clear any previous simulation
 
     abortRef.current = streamAnalysis(currentJobId, {
       onStatus(data) {
@@ -492,7 +494,11 @@ export default function SupplyPanel() {
           <button
             key={mt.key}
             className={`${styles.tab} ${panelMode === mt.key ? styles.tabActive : ''}`}
-            onClick={() => setPanelMode(mt.key)}
+            onClick={() => {
+              // Clear simulation overlay when leaving simulation tab
+              if (mt.key !== 'simulation') setSimulationResults([]);
+              setPanelMode(mt.key);
+            }}
           >
             {mt.icon}
             {mt.label}
@@ -625,41 +631,137 @@ export default function SupplyPanel() {
                 className={styles.textArea}
                 value={scenarioText}
                 onChange={e => setScenarioText(e.target.value)}
-                rows={4}
-                placeholder={"Describe a scenario to simulate...\n\nExample: 25% tariff on Chinese imports"}
+                rows={3}
+                placeholder={"Describe a scenario to simulate..."}
               />
+
+              {/* Example scenario chips */}
+              <div className={styles.scenarioChips}>
+                {[
+                  '25% tariff on Chinese imports',
+                  'EU embargo on Russian energy',
+                  'Earthquake disrupts Japanese manufacturing',
+                  'New US-Mexico trade agreement',
+                ].map(ex => (
+                  <button
+                    key={ex}
+                    className={styles.scenarioChip}
+                    onClick={() => setScenarioText(ex)}
+                  >
+                    {ex}
+                  </button>
+                ))}
+              </div>
+
               <button
                 className={styles.submitBtn}
                 onClick={handleRunSimulation}
-                disabled={simulationLoading || !scenarioText.trim()}
+                disabled={simulationLoading || !scenarioText.trim() || !currentJobId}
               >
                 {simulationLoading ? (
-                  <><Loader2 size={16} className={styles.spinner} /> Simulating...</>
+                  <><Loader2 size={16} className={styles.spinner} /> Analysing scenario...</>
                 ) : (
-                  <><Play size={16} /> Run Simulation</>
+                  <><Zap size={16} /> Simulate</>
                 )}
               </button>
 
+              {!currentJobId && (
+                <div className={styles.simHint}>
+                  Upload and analyse your supply chain first to enable simulation.
+                </div>
+              )}
+
               {simulationResults.map((sr, i) => (
-                <div key={i} className={styles.resultCard}>
-                  <div className={styles.resultCardTitle}>
-                    Scenario: {sr.scenario.description}
-                  </div>
-                  <p className={styles.resultText}>{sr.summary}</p>
-                  {sr.impacts.map((imp, j) => (
-                    <div key={j} className={styles.riskItem}>
-                      <span className={`${styles.severityBadge} ${
-                        imp.cost_change_pct > 20 ? styles.severity_high
-                          : imp.cost_change_pct > 10 ? styles.severity_medium
-                          : styles.severity_low
-                      }`}>
-                        +{imp.cost_change_pct}%
-                      </span>
-                      <span className={styles.riskDesc}>{imp.impact_description}</span>
+                <div key={i} className={styles.simResultBlock}>
+                  {/* Total impact banner */}
+                  <div className={`${styles.totalImpactBanner} ${
+                    sr.total_cost_impact_pct > 0 ? styles.impactNegative : styles.impactPositive
+                  }`}>
+                    <div className={styles.totalImpactIcon}>
+                      {sr.total_cost_impact_pct > 0
+                        ? <TrendingUp size={20} />
+                        : <TrendingDown size={20} />
+                      }
                     </div>
-                  ))}
+                    <div className={styles.totalImpactText}>
+                      <span className={styles.totalImpactNumber}>
+                        {sr.total_cost_impact_pct > 0 ? '+' : ''}{sr.total_cost_impact_pct.toFixed(1)}%
+                      </span>
+                      <span className={styles.totalImpactLabel}>Estimated Cost Impact</span>
+                    </div>
+                  </div>
+
+                  {/* Summary */}
+                  <div className={styles.resultCard}>
+                    <div className={styles.resultCardTitle}>
+                      <DollarSign size={14} /> Summary
+                    </div>
+                    <p className={styles.resultText}>{sr.summary}</p>
+                  </div>
+
+                  {/* Node impacts */}
+                  {sr.impacts.length > 0 && (
+                    <div className={styles.resultCard}>
+                      <div className={styles.resultCardTitle}>
+                        <AlertTriangle size={14} /> Affected Nodes ({sr.impacts.length})
+                      </div>
+                      {sr.impacts.map((imp, j) => (
+                        <div
+                          key={j}
+                          className={styles.riskItem}
+                          onClick={() => focusNode(imp.node_id)}
+                          style={{ cursor: 'pointer' }}
+                        >
+                          <span className={`${styles.severityBadge} ${
+                            styles[`severity_${imp.severity}`] || styles.severity_medium
+                          }`}>
+                            {imp.cost_change_pct > 0 ? '+' : ''}{imp.cost_change_pct.toFixed(1)}%
+                          </span>
+                          <span className={styles.riskDesc}>{imp.impact_description}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Recommendations */}
+                  {sr.recommendations && sr.recommendations.length > 0 && (
+                    <div className={styles.resultCard}>
+                      <div className={styles.resultCardTitle}>
+                        <Lightbulb size={14} /> Recommendations ({sr.recommendations.length})
+                      </div>
+                      {sr.recommendations.map((rec, j) => (
+                        <div key={j} className={styles.recItem}>
+                          <div className={styles.recHeader}>
+                            <span className={`${styles.recTypeBadge} ${
+                              rec.type === 'opportunity' ? styles.recOpportunity : styles.recMitigate
+                            }`}>
+                              {rec.type === 'opportunity'
+                                ? <><TrendingUp size={10} /> Opportunity</>
+                                : <><ShieldAlert size={10} /> Mitigate</>
+                              }
+                            </span>
+                            <span className={`${styles.recPriority} ${
+                              styles[`priority_${rec.priority}`]
+                            }`}>
+                              {rec.priority}
+                            </span>
+                          </div>
+                          <div className={styles.recTitle}>{rec.title}</div>
+                          <div className={styles.recDesc}>{rec.description}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ))}
+
+              {/* Empty state */}
+              {!simulationLoading && simulationResults.length === 0 && currentJobId && (
+                <div className={styles.emptyState}>
+                  <FlaskConical size={32} />
+                  <p>Enter a scenario above to see how it would affect your supply chain.</p>
+                </div>
+              )}
             </motion.div>
           )}
         </AnimatePresence>

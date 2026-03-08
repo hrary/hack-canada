@@ -66,3 +66,15 @@
   color: #f0f0f5;
   background: rgba(255, 255, 255, 0.15);
 }
+
+/* ── Animated arc dash flow ────────────────────────────────────────── */
+
+.animatedArc {
+  animation: dashFlow 3s linear infinite;
+}
+
+@keyframes dashFlow {
+  to {
+    stroke-dashoffset: -60;
+  }
+}

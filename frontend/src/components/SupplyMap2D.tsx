@@ -4,9 +4,9 @@ import {
   Geographies,
   Geography,
   Marker,
-  Line,
   ZoomableGroup,
   Graticule,
+  useMapContext,
 } from 'react-simple-maps';
 import styles from './SupplyMap2D.module.css';
 
@@ -41,6 +41,115 @@ interface Props {
   onDismiss: () => void;
 }
 
+/* ── Projected curve arcs (rendered inside ComposableMap context) ──── */
+
+function CurveArcs({
+  arcs,
+  onArcClick,
+  setTooltip,
+}: {
+  arcs: MapArc[];
+  onArcClick: (arc: MapArc) => void;
+  setTooltip: (t: { x: number; y: number; text: string } | null) => void;
+}) {
+  const { projection } = useMapContext();
+
+  const paths = useMemo(() => {
+    return arcs.map((arc) => {
+      const from = projection([arc.startLng, arc.startLat]);
+      const to = projection([arc.endLng, arc.endLat]);
+      if (!from || !to) return null;
+
+      const [x1, y1] = from;
+      const [x2, y2] = to;
+
+      // Midpoint
+      const mx = (x1 + x2) / 2;
+      const my = (y1 + y2) / 2;
+
+      // Distance between endpoints in SVG space
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < 0.5) return null;
+
+      // Perpendicular unit vector (always curve "upward" on screen)
+      const px = -dy / dist;
+      const py = dx / dist;
+
+      // Base curvature: proportional to distance, capped
+      const baseBulge = Math.min(dist * 0.25, 60);
+
+      // Overlap offset: spread grouped arcs apart
+      let groupOffset = 0;
+      if (arc.groupSize > 1) {
+        const center = (arc.groupSize - 1) / 2;
+        const t = (arc.groupIndex - center) / Math.max(arc.groupSize - 1, 1);
+        groupOffset = t * Math.min(dist * 0.15, 30);
+      }
+
+      // Always curve upward (negative Y in SVG) + group spread
+      const sign = py < 0 ? 1 : -1;
+      const totalBulge = baseBulge * sign + groupOffset;
+
+      const cx = mx + px * totalBulge;
+      const cy = my + py * totalBulge;
+
+      const d = `M ${x1} ${y1} Q ${cx} ${cy} ${x2} ${y2}`;
+
+      // Dash length for animation
+      const pathLen = dist * 1.3; // approximate quadratic arc length
+
+      return { arc, d, pathLen };
+    });
+  }, [arcs, projection]);
+
+  return (
+    <g>
+      {/* Gradient definitions for each unique color pair */}
+      <defs>
+        {arcs.map((arc, i) => (
+          <linearGradient key={`grad-${i}`} id={`arc-grad-${i}`}>
+            <stop offset="0%" stopColor={arc.color[0]} />
+            <stop offset="100%" stopColor={arc.color[1]} />
+          </linearGradient>
+        ))}
+      </defs>
+      {paths.map((p, i) => {
+        if (!p) return null;
+        return (
+          <path
+            key={`arc-${i}`}
+            d={p.d}
+            fill="none"
+            stroke={`url(#arc-grad-${i})`}
+            strokeWidth={p.arc.stroke}
+            strokeLinecap="round"
+            opacity={0.8}
+            strokeDasharray={`${p.pathLen * 0.08} ${p.pathLen * 0.04}`}
+            className={styles.animatedArc}
+            onClick={(e) => {
+              e.stopPropagation();
+              onArcClick(p.arc);
+            }}
+            onMouseEnter={(e) =>
+              setTooltip({
+                x: e.clientX,
+                y: e.clientY,
+                text: p.arc.label,
+              })
+            }
+            onMouseLeave={() => setTooltip(null)}
+            style={{ cursor: 'pointer' }}
+          />
+        );
+      })}
+    </g>
+  );
+}
+
+/* ── Main component ─────────────────────────────────────────────────── */
+
 export default function SupplyMap2D({
   arcsData,
   pointsData,
@@ -55,38 +164,6 @@ export default function SupplyMap2D({
     text: string;
   } | null>(null);
 
-  /** Offset overlapping arcs perpendicular to their direct path */
-  const offsetArcs = useMemo(() => {
-    return arcsData.map((arc) => {
-      if (arc.groupSize <= 1) return arc;
-
-      const dx = arc.endLng - arc.startLng;
-      const dy = arc.endLat - arc.startLat;
-      const len = Math.sqrt(dx * dx + dy * dy);
-      if (len === 0) return arc;
-
-      // Perpendicular unit vector
-      const px = -dy / len;
-      const py = dx / len;
-
-      const spread = Math.min(1.5, len * 0.08);
-      const center = (arc.groupSize - 1) / 2;
-      const t =
-        arc.groupSize > 1
-          ? (arc.groupIndex - center) / Math.max(arc.groupSize - 1, 1)
-          : 0;
-      const offset = t * spread;
-
-      return {
-        ...arc,
-        startLng: arc.startLng + px * offset * 0.5,
-        startLat: arc.startLat + py * offset * 0.5,
-        endLng: arc.endLng + px * offset,
-        endLat: arc.endLat + py * offset,
-      };
-    });
-  }, [arcsData]);
-
   return (
     <div className={styles.mapContainer}>
       <ComposableMap
@@ -97,7 +174,11 @@ export default function SupplyMap2D({
         style={{ width: '100%', height: '100%' }}
         onClick={onDismiss}
       >
-        <ZoomableGroup>
+        <ZoomableGroup
+          translateExtent={[[-100, -50], [1060, 550]]}
+          minZoom={1}
+          maxZoom={8}
+        >
           <Graticule stroke="rgba(255,255,255,0.05)" strokeWidth={0.3} />
           <Geographies geography={GEO_URL}>
             {({ geographies }: any) =>
@@ -118,32 +199,12 @@ export default function SupplyMap2D({
             }
           </Geographies>
 
-          {/* Supply-chain lines */}
-          {offsetArcs.map((arc, i) => (
-            <Line
-              key={`arc-${i}`}
-              from={[arc.startLng, arc.startLat]}
-              to={[arc.endLng, arc.endLat]}
-              stroke={arc.color[0]}
-              strokeWidth={arc.stroke}
-              strokeLinecap="round"
-              strokeOpacity={0.75}
-              fill="none"
-              onClick={(e) => {
-                e.stopPropagation();
-                onArcClick(arc);
-              }}
-              onMouseEnter={(e) =>
-                setTooltip({
-                  x: (e as unknown as MouseEvent).clientX,
-                  y: (e as unknown as MouseEvent).clientY,
-                  text: arc.label,
-                })
-              }
-              onMouseLeave={() => setTooltip(null)}
-              style={{ cursor: 'pointer' }}
-            />
-          ))}
+          {/* Supply-chain curved arcs */}
+          <CurveArcs
+            arcs={arcsData}
+            onArcClick={onArcClick}
+            setTooltip={setTooltip}
+          />
 
           {/* Supply-chain nodes */}
           {pointsData.map((pt, i) => (

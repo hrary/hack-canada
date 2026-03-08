@@ -52,7 +52,7 @@ function valueToStroke2D(value?: number): number {
 
 export default function SupplyGlobe({ supplyPoints, headquartersLocation }: Props) {
   const globeRef = useRef<any>(null);
-  const { supplierResearch, streamedRisks, focusLocation } = useAppContext();
+  const { supplierResearch, streamedRisks, focusLocation, simulationImpactMap } = useAppContext();
   const [selectedLabel, setSelectedLabel] = useState<string | null>(null);
   const [is3D, setIs3D] = useState(true);
 
@@ -110,6 +110,17 @@ export default function SupplyGlobe({ supplyPoints, headquartersLocation }: Prop
     return m;
   }, [nodeIdToPoint, severityMap]);
 
+  /* ── Simulation impact → frontend point ID ────────────────────── */
+  const simPointSeverityMap = useMemo(() => {
+    const m = new Map<string, string>();
+    if (simulationImpactMap.size === 0) return m;
+    for (const [nid, pt] of nodeIdToPoint) {
+      const sev = simulationImpactMap.get(nid);
+      if (sev) m.set(pt.id, sev);
+    }
+    return m;
+  }, [nodeIdToPoint, simulationImpactMap]);
+
   /* ── Sub-component points ─────────────────────────────────────── */
   const subPoints = useMemo(() => {
     const pts: MapPoint[] = [];
@@ -129,21 +140,39 @@ export default function SupplyGlobe({ supplyPoints, headquartersLocation }: Prop
   }, [supplierResearch]);
 
   /* ── Raw arcs (before overlap enrichment) ─────────────────────── */
+  const SIM_COLORS: Record<string, [string, string]> = {
+    low: ['#22c55e', '#4ade80'],
+    medium: ['#f59e0b', '#fbbf24'],
+    high: ['#ef4444', '#f87171'],
+    critical: ['#a855f7', '#c084fc'],
+  };
+
   const rawPrimaryArcs = useMemo(() => {
     if (!headquartersLocation) return [];
+    const hasSim = simulationImpactMap.size > 0;
     return supplyPoints.map(pt => {
       const sev = pointSeverityMap.get(pt.id);
+      const simSev = simPointSeverityMap.get(pt.id);
+      // During simulation: affected arcs use sim severity colors, unaffected dim to grey
+      let color: [string, string];
+      if (hasSim) {
+        color = simSev
+          ? (SIM_COLORS[simSev] ?? SIM_COLORS.medium)
+          : ['#374151', '#4b5563']; // dim grey for unaffected
+      } else {
+        color = sev ? SEVERITY_ARC_COLORS[sev] : DEFAULT_ARC_COLOR;
+      }
       return {
         startLat: pt.lat,
         startLng: pt.lng,
         endLat: headquartersLocation.lat,
         endLng: headquartersLocation.lng,
-        color: sev ? SEVERITY_ARC_COLORS[sev] : DEFAULT_ARC_COLOR,
-        label: `${pt.name} → Headquarters`,
+        color,
+        label: `${pt.name} → Headquarters${simSev ? ` [SIM: ${simSev.toUpperCase()}]` : ''}`,
         value: pt.value,
       };
     });
-  }, [supplyPoints, headquartersLocation, pointSeverityMap]);
+  }, [supplyPoints, headquartersLocation, pointSeverityMap, simPointSeverityMap, simulationImpactMap]);
 
   const rawSubArcs = useMemo(() => {
     const arcs: {
@@ -151,10 +180,20 @@ export default function SupplyGlobe({ supplyPoints, headquartersLocation }: Prop
       endLat: number; endLng: number;
       color: [string, string]; label: string; value?: number;
     }[] = [];
+    const hasSim = simulationImpactMap.size > 0;
     for (const res of supplierResearch) {
       const parent = nodeIdToPoint.get(res.node_id);
       if (!parent) continue;
       const sev = pointSeverityMap.get(parent.id);
+      const simSev = simPointSeverityMap.get(parent.id);
+      let color: [string, string];
+      if (hasSim) {
+        color = simSev
+          ? (SIM_COLORS[simSev] ?? SIM_COLORS.medium)
+          : ['#374151', '#4b5563'];
+      } else {
+        color = sev ? SEVERITY_ARC_COLORS[sev] : DEFAULT_ARC_COLOR;
+      }
       for (const sc of res.sub_components) {
         if (!sc.lat && !sc.lng) continue;
         arcs.push({
@@ -162,14 +201,14 @@ export default function SupplyGlobe({ supplyPoints, headquartersLocation }: Prop
           startLng: sc.lng,
           endLat: parent.lat,
           endLng: parent.lng,
-          color: sev ? SEVERITY_ARC_COLORS[sev] : DEFAULT_ARC_COLOR,
+          color,
           label: `${sc.component} (${sc.source_company || sc.source_country}) → ${parent.name}`,
           value: parent.value ? parent.value * 0.2 : undefined,
         });
       }
     }
     return arcs;
-  }, [supplierResearch, nodeIdToPoint, pointSeverityMap]);
+  }, [supplierResearch, nodeIdToPoint, pointSeverityMap, simPointSeverityMap, simulationImpactMap]);
 
   /* ── Assign overlap groups & compute stroke / altitude ────────── */
   const enrichedArcs = useMemo(() => {
@@ -245,16 +284,34 @@ export default function SupplyGlobe({ supplyPoints, headquartersLocation }: Prop
   );
 
   /* ── Points data (shared between 2D & 3D) ────────────────────── */
-  const pointsData: MapPoint[] = useMemo(
-    () => [
+  const SIM_NODE_COLORS: Record<string, string> = {
+    low: '#22c55e',
+    medium: '#f59e0b',
+    high: '#ef4444',
+    critical: '#a855f7',
+  };
+
+  const pointsData: MapPoint[] = useMemo(() => {
+    const hasSim = simulationImpactMap.size > 0;
+    return [
       ...supplyPoints.map(pt => {
         const sev = pointSeverityMap.get(pt.id);
+        const simSev = simPointSeverityMap.get(pt.id);
+        let color: string;
+        let size: number;
+        if (hasSim) {
+          color = simSev ? (SIM_NODE_COLORS[simSev] ?? '#f59e0b') : '#374151';
+          size = simSev ? 1.5 : 0.6; // affected nodes bigger, unaffected shrink
+        } else {
+          color = sev ? SEVERITY_COLORS[sev] : '#22d3ee';
+          size = 1.0;
+        }
         return {
           lat: pt.lat,
           lng: pt.lng,
-          size: 1.0,
-          color: sev ? SEVERITY_COLORS[sev] : '#22d3ee',
-          label: `${pt.name} — ${pt.material}${sev ? ` [${sev.toUpperCase()}]` : ''}`,
+          size,
+          color,
+          label: `${pt.name} — ${pt.material}${simSev ? ` [SIM: ${simSev.toUpperCase()}]` : sev ? ` [${sev.toUpperCase()}]` : ''}`,
         };
       }),
       ...subPoints,
@@ -269,9 +326,8 @@ export default function SupplyGlobe({ supplyPoints, headquartersLocation }: Prop
             },
           ]
         : []),
-    ],
-    [supplyPoints, subPoints, headquartersLocation, pointSeverityMap],
-  );
+    ];
+  }, [supplyPoints, subPoints, headquartersLocation, pointSeverityMap, simPointSeverityMap, simulationImpactMap]);
 
   /* ── Pan globe + pause spin when panel triggers focus ──────────── */
   useEffect(() => {

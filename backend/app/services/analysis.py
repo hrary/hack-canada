@@ -25,6 +25,7 @@ from ..models.schemas import (
     SubComponent,
 )
 from .backboard import ask_analysis_research, ask_analysis_risk
+from ..services.job_store import save_research
 
 log = logging.getLogger(__name__)
 
@@ -77,6 +78,9 @@ async def run_analysis_stream(
         "job_id": job_id,
         "supplier_research": [r.model_dump() for r in research],
     })
+
+    # Persist research for later use by simulation
+    save_research(job_id, research)
 
     # ── Phase 2: Risk scoring + alternatives ──────────────────────────
     yield _sse("status", {"phase": "risk", "message": "Scoring risks…"})

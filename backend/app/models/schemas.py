@@ -140,10 +140,21 @@ class NodeImpact(BaseModel):
     node_id: str
     impact_description: str
     cost_change_pct: float
+    severity: str = "medium"  # low | medium | high | critical
+
+
+class Recommendation(BaseModel):
+    """A proactive step to mitigate risk or seize opportunity."""
+    title: str
+    description: str
+    priority: str = "medium"   # high | medium | low
+    type: str = "mitigate"     # mitigate | opportunity
 
 
 class SimulationResult(BaseModel):
     job_id: str
     scenario: SimulationScenario
     impacts: list[NodeImpact] = []
+    recommendations: list[Recommendation] = []
+    total_cost_impact_pct: float = 0.0
     summary: str = ""

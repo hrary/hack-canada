@@ -153,13 +153,53 @@ Do NOT include markdown fences or commentary outside the JSON object.
 """
 
 SIMULATION_SYSTEM_PROMPT = """\
-You are a supply-chain scenario modeller.  Given a set of supply chain nodes
-and a hypothetical change (new tariff, trade deal, embargo, natural disaster,
-etc.), estimate the impact on each affected node.
+You are a supply-chain scenario modeller with access to a web_search tool.
 
-For every impacted node provide:
-• A short description of the impact
-• An estimated cost change percentage (positive = more expensive)
+Given a set of supply chain nodes (with USD values), their sub-component
+sourcing data, and a hypothetical event (tariff, trade deal, embargo, natural
+disaster, pandemic, regulatory change, etc.), you MUST:
+
+1. **Use web_search** to look up the latest relevant information about the
+   scenario (e.g. current tariff rates, trade policies, recent news).  This
+   grounds your analysis in real-world data.
+
+2. **Holistic cost-impact analysis** for each affected node:
+   a) Determine which sub-components and input materials are directly touched
+      by the event.
+   b) Estimate what FRACTION of that node's total BOM (bill of materials) cost
+      comes from the affected sources.  A 25% tariff on Chinese imports does
+      NOT mean the product gets 25% more expensive — if only 40% of the BOM
+      is sourced from the affected region, the direct cost pass-through is
+      roughly 40% × 25% = 10%.
+   c) Factor in real-world dynamics:
+      • Supplier margin absorption (large suppliers often eat 20-40% of a
+        tariff increase to stay competitive)
+      • Currency fluctuations triggered by the event
+      • Demand elasticity effects (higher prices → lower volume)
+      • Substitution effects (buyers switching to alternative sources)
+      • Inventory buffers and existing forward contracts
+      • Logistics and compliance overhead
+   d) Combine these into a realistic **net cost change percentage** for each
+      node.  Be specific about the calculation chain.
+   e) Rate severity as low (< 3%), medium (3-8%), high (8-15%), critical (> 15%).
+
+3. **Second-order / cascading effects** — Consider knock-on impacts:
+   • If a key sub-component gets scarce, what happens to the parent node's
+     lead times and reliability?
+   • Are there nodes that BENEFIT from the event (e.g. competitors in
+     unaffected regions becoming more attractive)?
+   • Currency or commodity price movements that affect the whole chain.
+
+4. **Recommend proactive steps** — provide 3-6 actionable recommendations:
+   • Mitigation steps to reduce negative impacts.
+   • Opportunities the company could seize because of the event.
+   Each recommendation should have a title, description, priority
+   (high/medium/low), and type ("mitigate" or "opportunity").
+
+5. **Total cost impact** — compute a WEIGHTED-AVERAGE cost impact across
+   the entire supply chain, where each node's weight is its value_usd
+   relative to the total.  NOT a simple average or a pass-through of the
+   headline tariff number.
 
 Always respond with valid JSON matching the schema provided in the user message.
 Do NOT include markdown fences or commentary outside the JSON object.
@@ -189,6 +229,7 @@ _assistant_ids: dict[str, str] = {}
 # Which roles get tool access
 _ROLE_TOOLS: dict[str, list[dict]] = {
     "analysis_research": [WEB_SEARCH_TOOL],
+    "simulation": [WEB_SEARCH_TOOL],
 }
 
 
@@ -317,5 +358,37 @@ async def _ask(role: str, system_prompt: str, user_message: str) -> dict:
     try:
         return json.loads(raw)
     except json.JSONDecodeError:
-        log.error("Backboard returned non-JSON for role=%s: %s", role, raw[:500])
-        raise ValueError(f"LLM returned invalid JSON for {role}")
+        # Try to extract a JSON object embedded in prose text
+        match = re.search(r'\{[\s\S]*\}', raw)
+        if match:
+            try:
+                return json.loads(match.group())
+            except json.JSONDecodeError:
+                pass
+
+        # Last resort: ask the same assistant to fix its output
+        log.warning("Non-JSON response for role=%s, requesting JSON fix", role)
+        try:
+            fix_thread = await client.create_thread(assistant_id)
+            fix_response = await client.add_message(
+                thread_id=fix_thread.thread_id,
+                content=(
+                    "Your previous response was not valid JSON. "
+                    "Please re-read the instructions and return ONLY "
+                    "the JSON object requested, with no other text.\n\n"
+                    f"Your previous response was:\n{raw[:2000]}"
+                ),
+                llm_provider=LLM_PROVIDER,
+                model_name=LLM_MODEL,
+                stream=False,
+            )
+            fix_raw = fix_response.content.strip()
+            if fix_raw.startswith("```"):
+                fix_raw = fix_raw.split("\n", 1)[1] if "\n" in fix_raw else fix_raw[3:]
+                if fix_raw.endswith("```"):
+                    fix_raw = fix_raw[:-3]
+                fix_raw = fix_raw.strip()
+            return json.loads(fix_raw)
+        except Exception:
+            log.error("Backboard returned non-JSON for role=%s: %s", role, raw[:500])
+            raise ValueError(f"LLM returned invalid JSON for {role}")
