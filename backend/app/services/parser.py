@@ -78,12 +78,14 @@ Return a JSON object with this shape:
       "lng": <longitude>,
       "material": "<material or component>",
       "supplier": "<supplier company name>",
-      "country": "<country>"
+      "country": "<country>",
+      "hs_code": "<4-6 digit HS code, e.g. 7214.10>"
     }}
   ]
 }}
 
 Use realistic coordinates.  If only a country is mentioned, use the capital's coords.
+For hs_code, infer the best-fit Harmonized System code for the material described.
 """
     try:
         data = await ask_parser(prompt)
@@ -103,6 +105,7 @@ Use realistic coordinates.  If only a country is mentioned, use the capital's co
                     material=n.get("material", ""),
                     supplier=n.get("supplier", ""),
                     country=n.get("country", ""),
+                    hs_code=n.get("hs_code", ""),
                 )
             )
         except (KeyError, ValueError, TypeError):
@@ -147,6 +150,7 @@ def _parse_csv(content: str) -> SupplyChainData:
                 supplier=row.get("supplier", ""),
                 country=row.get("country", ""),
                 value=value,
+                hs_code=row.get("hs_code", row.get("hscode", "")),
             )
         )
 

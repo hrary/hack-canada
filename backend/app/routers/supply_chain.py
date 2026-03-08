@@ -8,6 +8,7 @@ from ..models.schemas import (
     SupplyChainData,
 )
 from ..services.parser import parse_supply_chain_text, parse_supply_chain_text_async
+from ..services.tariff_lookup import enrich_chain
 from ..services.job_store import jobs, save_parsed_chain
 
 router = APIRouter()
@@ -24,6 +25,9 @@ async def upload_text(payload: TextUploadRequest):
     parsed: SupplyChainData = await parse_supply_chain_text_async(
         payload.content, fmt=payload.format
     )
+
+    # Deterministic tariff enrichment — attaches HS codes, rates, CUSMA flags
+    parsed = enrich_chain(parsed)
 
     resp = UploadResponse(success=True, message=f"Parsed {len(parsed.nodes)} nodes.")
     save_parsed_chain(resp.job_id, parsed)

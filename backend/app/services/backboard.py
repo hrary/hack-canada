@@ -171,10 +171,16 @@ text (an article, email, report, etc.) that describes a company's supply chain.
 Extract every supply-chain node you can find.
 
 For each node output:
-  name, lat, lng, material, supplier, country
+  name, lat, lng, material, supplier, country, hs_code
 
 Use realistic latitude/longitude for the location described.  If unsure of
 exact coords, use the centroid of the city, state, or country mentioned.
+
+For hs_code: infer the most likely 4-6 digit Harmonized System (HS) code for
+the material or product described.  Use the standard international HS
+classification (e.g. "7214.10" for steel bars, "8542.31" for processors,
+"5201.00" for raw cotton).  If you are unsure, provide your best guess —
+a 4-digit heading is acceptable.
 
 Always respond with valid JSON matching the schema provided in the user message.
 Do NOT include markdown fences or commentary outside the JSON object.

@@ -41,6 +41,9 @@ def _nodes_to_json(chain: SupplyChainData) -> str:
                 "material": n.material,
                 "supplier": n.supplier,
                 "country": n.country,
+                "hs_code": n.hs_code,
+                "tariff_rate_pct": n.tariff_rate,
+                "cusma_eligible": n.cusma_eligible,
             }
             for n in chain.nodes
         ],
@@ -194,11 +197,24 @@ async def _run_risk_phase(
     prompt = f"""\
 Assess risks for the following supply chain using the research data below.
 
-PRIMARY NODES:
+PRIMARY NODES (with deterministic tariff data from CBSA database):
 {nodes_json}
 
 SUPPLIER RESEARCH (sub-component sources discovered):
 {research_json}
+
+IMPORTANT — TARIFF DATA RULES:
+Each node already has deterministic tariff data looked up from the Canadian
+customs tariff schedule (CBSA).  The fields tariff_rate_pct and cusma_eligible
+are AUTHORITATIVE — do NOT estimate or override them.
+- For tariff-category risks, use the provided tariff_rate_pct as the
+  estimated_cost_impact.
+- A node with tariff_rate_pct > 0 should get a tariff risk; severity should
+  scale with the rate (>25% = critical, >10% = high, >5% = medium, else low).
+- If cusma_eligible is true and the country is US or Mexico, tariff risk is
+  low or absent — note CUSMA eligibility in the description.
+- Focus your analytical effort on geopolitical, logistics, and single-source
+  risks where the LLM adds real value.
 
 Return a JSON object:
 {{
@@ -303,15 +319,37 @@ def _sse(event: str, data: dict) -> str:
 
 
 def _fallback_analysis(job_id: str, chain: SupplyChainData) -> AnalysisResult:
-    risks = [
-        RiskFactor(
+    risks: list[RiskFactor] = []
+    for node in chain.nodes:
+        rate = node.tariff_rate or 0
+        if rate > 25:
+            sev = RiskSeverity.critical
+        elif rate > 10:
+            sev = RiskSeverity.high
+        elif rate > 5:
+            sev = RiskSeverity.medium
+        elif rate > 0:
+            sev = RiskSeverity.low
+        else:
+            sev = RiskSeverity.low
+
+        desc = (
+            f"{node.material} from {node.country} — "
+            f"HS {node.hs_code}, {rate}% duty"
+            if node.hs_code
+            else f"Potential tariff exposure on {node.material} from {node.country}."
+        )
+        if node.cusma_eligible:
+            desc += " (CUSMA eligible)"
+
+        risks.append(RiskFactor(
             node_id=node.id,
             category="tariff",
-            description=f"Potential tariff exposure on {node.material} from {node.country}.",
-            severity=RiskSeverity.medium,
-        )
-        for node in chain.nodes
-    ]
+            description=desc,
+            severity=sev,
+            estimated_cost_impact=rate if rate > 0 else None,
+        ))
+
     return AnalysisResult(
         job_id=job_id,
         status=JobStatus.complete,
@@ -319,7 +357,7 @@ def _fallback_analysis(job_id: str, chain: SupplyChainData) -> AnalysisResult:
         risks=risks,
         alternatives=[],
         summary=(
-            f"[Fallback] Analysed {len(chain.nodes)} nodes. "
+            f"[Fallback] Analysed {len(chain.nodes)} nodes using CBSA tariff data. "
             f"Found {len(risks)} risk(s). LLM was unavailable."
         ),
     )
