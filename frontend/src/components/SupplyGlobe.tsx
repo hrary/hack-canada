@@ -170,6 +170,7 @@ export default function SupplyGlobe({ supplyPoints, headquartersLocation }: Prop
         color,
         label: `${pt.name} → Headquarters${simSev ? ` [SIM: ${simSev.toUpperCase()}]` : ''}`,
         value: pt.value,
+        isSub: false,
       };
     });
   }, [supplyPoints, headquartersLocation, pointSeverityMap, simPointSeverityMap, simulationImpactMap]);
@@ -178,7 +179,7 @@ export default function SupplyGlobe({ supplyPoints, headquartersLocation }: Prop
     const arcs: {
       startLat: number; startLng: number;
       endLat: number; endLng: number;
-      color: [string, string]; label: string; value?: number;
+      color: [string, string]; label: string; value?: number; isSub: boolean;
     }[] = [];
     const hasSim = simulationImpactMap.size > 0;
     for (const res of supplierResearch) {
@@ -204,6 +205,7 @@ export default function SupplyGlobe({ supplyPoints, headquartersLocation }: Prop
           color,
           label: `${sc.component} (${sc.source_company || sc.source_country}) → ${parent.name}`,
           value: parent.value ? parent.value * 0.2 : undefined,
+          isSub: true,
         });
       }
     }
@@ -239,10 +241,12 @@ export default function SupplyGlobe({ supplyPoints, headquartersLocation }: Prop
       // Subtle altitude bump only for truly overlapping arcs
       // groupIndex 0 → baseline 0.5, each extra → +0.06 (barely visible)
       const altScale = groupSize > 1 ? 0.5 + groupIndex * 0.06 : 0.5;
+      // Sub-component edges get thinner strokes
+      const subScale = arc.isSub ? 0.45 : 1;
       return {
         ...arc,
-        stroke3D: valueToStroke3D(arc.value),
-        stroke2D: valueToStroke2D(arc.value),
+        stroke3D: valueToStroke3D(arc.value) * subScale,
+        stroke2D: valueToStroke2D(arc.value) * subScale,
         altitudeScale: altScale,
         groupIndex,
         groupSize,
