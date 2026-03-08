@@ -10,6 +10,7 @@ Phase 2 (risk): Using research findings, score risks and propose alternatives.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import AsyncGenerator
@@ -70,11 +71,41 @@ async def run_analysis_stream(
     yield _sse("status", {"phase": "research", "message": "Researching suppliers…"})
 
     research: list[SupplierResearch] = []
-    try:
-        research_data = await _run_research_phase(nodes_json)
-        research = _parse_research(research_data)
-    except Exception:
-        log.exception("Research phase failed")
+    # Chunk nodes into small batches so the LLM doesn't fire too many
+    # parallel web_search tool calls (which overwhelms the Backboard SDK).
+    _RESEARCH_CHUNK = 3
+    _RESEARCH_TIMEOUT = 180  # seconds per chunk
+    node_chunks = [
+        chain.nodes[i : i + _RESEARCH_CHUNK]
+        for i in range(0, len(chain.nodes), _RESEARCH_CHUNK)
+    ]
+    for ci, chunk in enumerate(node_chunks):
+        chunk_json = json.dumps(
+            [
+                {
+                    "id": n.id,
+                    "name": n.name,
+                    "lat": n.lat,
+                    "lng": n.lng,
+                    "material": n.material,
+                    "supplier": n.supplier,
+                    "country": n.country,
+                }
+                for n in chunk
+            ],
+            indent=2,
+        )
+        try:
+            chunk_data = await asyncio.wait_for(
+                _run_research_phase(chunk_json),
+                timeout=_RESEARCH_TIMEOUT,
+            )
+            research.extend(_parse_research(chunk_data))
+            log.info("Research chunk %d/%d OK (%d suppliers)", ci + 1, len(node_chunks), len(chunk))
+        except asyncio.TimeoutError:
+            log.warning("Research chunk %d/%d timed out", ci + 1, len(node_chunks))
+        except Exception:
+            log.exception("Research chunk %d/%d failed", ci + 1, len(node_chunks))
 
     yield _sse("research", {
         "job_id": job_id,
@@ -91,10 +122,15 @@ async def run_analysis_stream(
     alternatives: list[Alternative] = []
     summary = ""
     try:
-        risk_data = await _run_risk_phase(nodes_json, research)
+        risk_data = await asyncio.wait_for(
+            _run_risk_phase(nodes_json, research),
+            timeout=180,
+        )
         risks = _parse_risks(risk_data)
         alternatives = _parse_alternatives(risk_data)
         summary = risk_data.get("summary", "")
+    except asyncio.TimeoutError:
+        log.warning("Risk phase timed out")
     except Exception:
         log.exception("Risk phase failed")
 

@@ -90,14 +90,21 @@ export default function SupplyGlobe({ supplyPoints, headquartersLocation }: Prop
     return m;
   }, [streamedRisks]);
 
-  /* ── Node ID → SupplyPoint matching by supplier name ──────────── */
+  /* ── Node ID → SupplyPoint matching ─────────────────────────── */
   const nodeIdToPoint = useMemo(() => {
     const m = new Map<string, SupplyPoint>();
+    // Direct mapping: supply points already carry backend node IDs
+    for (const pt of supplyPoints) {
+      m.set(pt.id, pt);
+    }
+    // Also map from supplier research (covers cases where IDs differ)
     for (const res of supplierResearch) {
-      const pt = supplyPoints.find(
-        p => p.supplier === res.supplier || p.name === res.supplier,
-      );
-      if (pt) m.set(res.node_id, pt);
+      if (!m.has(res.node_id)) {
+        const pt = supplyPoints.find(
+          p => p.supplier === res.supplier || p.name === res.supplier,
+        );
+        if (pt) m.set(res.node_id, pt);
+      }
     }
     return m;
   }, [supplierResearch, supplyPoints]);

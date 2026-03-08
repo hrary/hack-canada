@@ -392,7 +392,7 @@ async def _ask(role: str, system_prompt: str, user_message: str) -> dict:
             tool_outputs=tool_outputs,
         )
 
-    raw = response.content.strip()
+    raw = (response.content or "").strip()
 
     # Strip markdown code fences if the model wraps anyway
     if raw.startswith("```"):
@@ -428,7 +428,7 @@ async def _ask(role: str, system_prompt: str, user_message: str) -> dict:
                 model_name=LLM_MODEL,
                 stream=False,
             )
-            fix_raw = fix_response.content.strip()
+            fix_raw = (fix_response.content or "").strip()
             if fix_raw.startswith("```"):
                 fix_raw = fix_raw.split("\n", 1)[1] if "\n" in fix_raw else fix_raw[3:]
                 if fix_raw.endswith("```"):
