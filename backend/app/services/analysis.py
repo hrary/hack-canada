@@ -114,6 +114,22 @@ async def run_analysis_stream(
     except Exception:
         log.exception("Research phase failed")
 
+    # Retry ONCE if research came back empty (LLM sometimes returns wrong format)
+    if not research:
+        log.warning("Research empty after first attempt for job %s – retrying", job_id)
+        try:
+            ok2, research_data2 = await _await_with_keepalive(
+                _run_research_phase(nodes_json),
+                timeout=RESEARCH_TIMEOUT,
+            )
+            if ok2 and research_data2:
+                log.info("Retry raw keys: %s", list(research_data2.keys()) if isinstance(research_data2, dict) else type(research_data2))
+                research = _parse_research(research_data2)
+                research = _remap_research(research, valid_ids, name_to_id)
+                log.info("Retry produced %d research entries", len(research))
+        except Exception:
+            log.exception("Research retry also failed")
+
     yield _sse("research", {
         "job_id": job_id,
         "supplier_research": [r.model_dump() for r in research],
@@ -415,37 +431,65 @@ def _remap_alternatives(
 # ── Parsers ──────────────────────────────────────────────────────────
 
 
+def _get(d: dict, *keys, default=None):
+    """Get first matching key from dict (handles snake_case/camelCase variants)."""
+    for k in keys:
+        if k in d:
+            return d[k]
+    return default
+
+
 def _parse_research(data: dict) -> list[SupplierResearch]:
     out: list[SupplierResearch] = []
-    for item in data.get("supplier_research", []):
+    # Handle both snake_case and camelCase keys from LLM
+    items = (
+        data.get("supplier_research")
+        or data.get("supplierResearch")
+        or data.get("research")
+        or []
+    )
+    # If the LLM returned the array directly (not wrapped in an object)
+    if isinstance(data, list):
+        items = data
+    if not items:
+        log.warning("_parse_research: no items found. Keys in data: %s", list(data.keys()) if isinstance(data, dict) else type(data))
+    for item in items:
+        if not isinstance(item, dict):
+            continue
         subs = []
-        for sc in item.get("sub_components", []):
+        sub_list = _get(item, "sub_components", "subComponents", "sub_component_sources", default=[])
+        if not isinstance(sub_list, list):
+            sub_list = []
+        for sc in sub_list:
             if not isinstance(sc, dict):
                 continue
             try:
-                lat = float(sc.get("lat") or 0)
+                lat = float(_get(sc, "lat", "latitude", default=0) or 0)
             except (ValueError, TypeError):
                 lat = 0.0
             try:
-                lng = float(sc.get("lng") or 0)
+                lng = float(_get(sc, "lng", "longitude", default=0) or 0)
             except (ValueError, TypeError):
                 lng = 0.0
             subs.append(SubComponent(
-                component=str(sc.get("component", "")),
-                source_company=str(sc.get("source_company", "")),
-                source_country=str(sc.get("source_country", "")),
+                component=str(_get(sc, "component", "name", "material", default="")),
+                source_company=str(_get(sc, "source_company", "sourceCompany", "company", "supplier", default="")),
+                source_country=str(_get(sc, "source_country", "sourceCountry", "country", default="")),
                 lat=lat,
                 lng=lng,
             ))
-        try:
-            out.append(SupplierResearch(
-                node_id=item["node_id"],
-                supplier=item.get("supplier", ""),
-                findings=item.get("findings", ""),
-                sub_components=subs,
-            ))
-        except KeyError:
+        nid = _get(item, "node_id", "nodeId", "id", default="")
+        if not nid:
+            log.warning("_parse_research: skipping item with no node_id: %s", item.get("supplier", "?"))
             continue
+        out.append(SupplierResearch(
+            node_id=str(nid),
+            supplier=str(_get(item, "supplier", "name", default="")),
+            findings=str(_get(item, "findings", "summary", "description", default="")),
+            sub_components=subs,
+        ))
+    log.info("_parse_research: parsed %d entries with %d total subs",
+             len(out), sum(len(r.sub_components) for r in out))
     return out
 
 

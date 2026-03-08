@@ -272,9 +272,14 @@ export default function SupplyPanel() {
         else if (data.phase === 'risk') setAnalysisPhase('risk');
       },
       onResearch(data) {
-        console.log('[SupplyPanel] onResearch received:', data.supplier_research?.length, 'entries',
-          data.supplier_research?.map((r: any) => `${r.supplier}:${r.sub_components?.length}subs`));
-        setSupplierResearch(data.supplier_research);
+        const entries = data.supplier_research || [];
+        const totalSubs = entries.reduce((s: number, r: any) => s + (r.sub_components?.length || 0), 0);
+        console.log('[SupplyPanel] onResearch received:', entries.length, 'entries,', totalSubs, 'total subs.',
+          entries.map((r: any) => `${r.supplier}:${r.sub_components?.length}subs node_id=${r.node_id}`));
+        if (entries.length === 0) {
+          console.warn('[SupplyPanel] WARNING: Research returned 0 entries! Raw keys:', Object.keys(data));
+        }
+        setSupplierResearch(entries);
         setAnalysisPhase('risk');
       },
       onRisk(data) {
@@ -282,13 +287,18 @@ export default function SupplyPanel() {
         setStreamedAlternatives(data.alternatives);
       },
       onDone(result) {
-        console.log('[SupplyPanel] onDone received:',
-          'nodes=', result.supply_chain?.nodes?.length,
-          'research=', result.supplier_research?.length,
-          'risks=', result.risks?.length);
+        const nodeCount = result.supply_chain?.nodes?.length || 0;
+        const resCount = result.supplier_research?.length || 0;
+        const riskCount = result.risks?.length || 0;
+        const totalSubs = (result.supplier_research || []).reduce(
+          (s: number, r: any) => s + (r.sub_components?.length || 0), 0);
+        console.log(`[SupplyPanel] onDone: ${nodeCount} nodes, ${resCount} research (${totalSubs} subs), ${riskCount} risks`);
+        if (resCount === 0) {
+          console.warn('[SupplyPanel] WARNING: Done payload has 0 research entries! Keys:', Object.keys(result));
+        }
         // Refresh supply points to ensure IDs match research/risk node_ids
         if (result.supply_chain?.nodes?.length) {
-          setSupplyPoints(result.supply_chain.nodes.map((n: any) => ({
+          const newPts = result.supply_chain.nodes.map((n: any) => ({
             id: n.id,
             name: n.name,
             lat: n.lat,
@@ -297,11 +307,14 @@ export default function SupplyPanel() {
             supplier: n.supplier || '',
             country: n.country || '',
             value: n.value || undefined,
-          })));
+          }));
+          console.log('[SupplyPanel] Setting supplyPoints from done:', newPts.map((p: any) => `${p.id}:${p.supplier}`));
+          setSupplyPoints(newPts);
         }
         // Re-sync research & risks from the done payload (belt-and-suspenders:
         // guarantees the globe has data even if an earlier SSE event was missed)
         if (result.supplier_research?.length) {
+          console.log('[SupplyPanel] Setting supplierResearch from done:', result.supplier_research.length, 'entries');
           setSupplierResearch(result.supplier_research);
         }
         if (result.risks?.length) {

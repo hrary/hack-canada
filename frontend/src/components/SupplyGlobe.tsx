@@ -96,12 +96,23 @@ export default function SupplyGlobe({ supplyPoints, headquartersLocation }: Prop
     for (const res of supplierResearch) {
       // Primary: match by backend node_id → supply point id (both from backend)
       let pt = supplyPoints.find(p => p.id === res.node_id);
-      // Fallback: match by name
+      // Fallback 1: exact name match
       if (!pt) pt = supplyPoints.find(
         p => p.supplier === res.supplier || p.name === res.supplier,
       );
+      // Fallback 2: case-insensitive trimmed match
+      if (!pt) {
+        const rSup = res.supplier.trim().toLowerCase();
+        pt = supplyPoints.find(
+          p => p.supplier.trim().toLowerCase() === rSup
+            || p.name.trim().toLowerCase() === rSup,
+        );
+      }
       if (pt) m.set(res.node_id, pt);
     }
+    console.log('[SupplyGlobe] nodeIdToPoint:', m.size, '/', supplierResearch.length,
+      'matched. SP ids:', supplyPoints.map(p => p.id).join(','),
+      'Research node_ids:', supplierResearch.map(r => r.node_id).join(','));
     return m;
   }, [supplierResearch, supplyPoints]);
 
@@ -216,9 +227,10 @@ export default function SupplyGlobe({ supplyPoints, headquartersLocation }: Prop
       color: [string, string]; label: string; value?: number; isSub: boolean;
     }[] = [];
     const hasSim = simulationImpactMap.size > 0;
+    let skippedNoParent = 0;
     for (const res of supplierResearch) {
       const parent = nodeIdToPoint.get(res.node_id);
-      if (!parent) continue;
+      if (!parent) { skippedNoParent++; continue; }
       const sev = pointSeverityMap.get(parent.id);
       const simSev = simPointSeverityMap.get(parent.id);
       let color: [string, string];
@@ -251,12 +263,16 @@ export default function SupplyGlobe({ supplyPoints, headquartersLocation }: Prop
         });
       }
     }
+    console.log('[SupplyGlobe] rawSubArcs:', arcs.length, 'created,', skippedNoParent, 'skipped (no parent).',
+      'supplierResearch entries:', supplierResearch.length,
+      'Total sub_components:', supplierResearch.reduce((s, r) => s + (r.sub_components?.length || 0), 0));
     return arcs;
   }, [supplierResearch, nodeIdToPoint, pointSeverityMap, simPointSeverityMap, simulationImpactMap]);
 
   /* ── Assign overlap groups & compute stroke / altitude ────────── */
   const enrichedArcs = useMemo(() => {
     const all = [...rawPrimaryArcs, ...rawSubArcs];
+    console.log('[SupplyGlobe] enrichedArcs: primary=', rawPrimaryArcs.length, 'sub=', rawSubArcs.length, 'total=', all.length);
 
     // Group arcs that share BOTH rounded start AND end (truly overlapping)
     const groups = new Map<string, number[]>();

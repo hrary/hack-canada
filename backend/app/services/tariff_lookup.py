@@ -487,7 +487,12 @@ def calculate_net_tariff(chain: SupplyChainData) -> dict:
     finally:
         conn.close()
 
-    net_pct = round(total_tariff_cost / total_value * 100, 2) if total_value > 0 else 0.0
+    if total_value > 0:
+        net_pct = round(total_tariff_cost / total_value * 100, 2)
+    else:
+        # No dollar values available — use equal-weighted average of applied rates
+        known_rates = [n["applied_rate"] for n in node_results if n.get("applied_rate") is not None]
+        net_pct = round(sum(known_rates) / len(known_rates), 2) if known_rates else 0.0
 
     # Build summary
     fta_nodes = sum(1 for n in node_results if n.get("rate_type") not in ("mfn", "unknown", "not_found", "country_override"))
